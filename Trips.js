@@ -27,8 +27,10 @@ export default function Trips({base, catches, api, toUK, ukToISO, todayUK, style
       setTrips(rows);
       setSelected(previous => previous ? rows.find(trip=>trip.id===previous.id) || null : null);
       setStatus('');
+      return true;
     } catch {
       setStatus('Could not load trips. Check your connection and make sure the Fish On server supports trips.');
+      return false;
     }
   }, [api, base]);
   useEffect(() => { load(); }, [load]);
@@ -115,7 +117,7 @@ export default function Trips({base, catches, api, toUK, ukToISO, todayUK, style
       appendPhoto(formData,prepared.asset,File);
       await api(base,'/api/trips/'+selected.id+'/photos',{method:'POST',body:formData});
       setPendingPhotos(previous=>{const next={...previous};delete next[selected.id];return next});
-      await load();
+      if (!await load()) Alert.alert('Photo saved', 'The photo was uploaded, but the trip could not refresh. Reopen the trip when connected.');
     } catch (error) { Alert.alert('Photo not saved', (error.message || 'Check the connection and try again.')+' You can retry while this screen is open.'); }
     finally { setBusy(false); }
   }
@@ -129,7 +131,7 @@ export default function Trips({base, catches, api, toUK, ukToISO, todayUK, style
       {text:'Cancel',style:'cancel'},
       {text:'Remove',style:'destructive',onPress:async()=>{
         setBusy(true);
-        try { const result=await api(base,'/api/trips/'+selected.id+'/photos/'+photo.id,{method:'DELETE'}); await load(); if(result.warning)Alert.alert('Photo removed',result.warning); }
+        try { const result=await api(base,'/api/trips/'+selected.id+'/photos/'+photo.id,{method:'DELETE'}); const refreshed=await load(); if(result.warning)Alert.alert('Photo removed',result.warning); else if(!refreshed)Alert.alert('Photo removed','The trip could not refresh. Reopen it when connected.'); }
         catch (error) { Alert.alert('Could not remove photo',error.message || 'Check the connection and try again.'); }
         finally { setBusy(false); }
       }},
