@@ -19,7 +19,8 @@
         "NSLocationWhenInUseUsageDescription": "Use your current location to record where you caught a fish.",
         "NSCameraUsageDescription": "Take a photo of your catch and save it to Fish On.",
         "NSPhotoLibraryAddUsageDescription": "Save the fish photos you take to your Photos library."
-      }
+      },
+      "icon": "./assets/fo-ios-icon.png"
     },
     "android": {
       "adaptiveIcon": {
