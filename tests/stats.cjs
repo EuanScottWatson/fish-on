@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const Module=require('node:module');
+const babel=require('@babel/core');
+const file=path.join(__dirname,'..','stats.js');
+const code=babel.transformSync(fs.readFileSync(file,'utf8'),{filename:file,configFile:false,babelrc:false,plugins:['@babel/plugin-transform-modules-commonjs']}).code;
+const mod=new Module(file,module);mod.filename=file;mod.paths=module.paths;mod._compile(code,file);
+const {fishingSummary}=mod.exports;
+const catches=[{species:'Pike',date:'2026-05-17'},{species:' pike ',date:'2025-01-01'},{species:'Carp',date:''}];
+assert.deepEqual(fishingSummary(catches,null,2026),{catches:3,species:2,caughtThisYear:1,trips:null,tripsWithLinkedCatches:null});
+assert.deepEqual(fishingSummary(catches,[{catch_ids:['one']},{catch_ids:[]}],2026),{catches:3,species:2,caughtThisYear:1,trips:2,tripsWithLinkedCatches:1});
+assert.deepEqual(fishingSummary([],[],2026),{catches:0,species:0,caughtThisYear:0,trips:0,tripsWithLinkedCatches:0});
+assert.equal(fishingSummary([{species:'Trout',date:'2026-02-30'}],[],2026).caughtThisYear,0);
+console.log('PASS catch and trip counts, missing trip data and duplicate species names');

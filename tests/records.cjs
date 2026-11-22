@@ -1,0 +1,16 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const Module=require('node:module');
+const babel=require('@babel/core');
+const file=path.join(__dirname,'..','records.js');
+const code=babel.transformSync(fs.readFileSync(file,'utf8'),{filename:file,configFile:false,babelrc:false,plugins:['@babel/plugin-transform-modules-commonjs']}).code;
+const mod=new Module(file,module);mod.filename=file;mod.paths=module.paths;mod._compile(code,file);
+const {weightInGrams,personalBests}=mod.exports;
+assert.equal(weightInGrams('1 kg'),1000);
+assert.equal(weightInGrams('500 g'),500);
+assert.ok(Math.abs(weightInGrams('2 lb 4 oz')-1020.5828325)<1e-7);
+for(const value of ['', '12', '-2 kg','2 lb 20 oz','0 g','roughly 4 kg',null])assert.equal(weightInGrams(value),null);
+const catches=[{id:'a',species:'Pike',weight:'2 lb'}, {id:'b',species:'pike',weight:'1 kg'}, {id:'c',species:'Carp',weight:'12'}, {id:'d',species:'Carp',weight:'1.5 kg'}];
+assert.deepEqual(personalBests(catches).map(x=>x.catchItem.id),['d','b']);
+console.log('PASS explicit weight units, mixed-unit comparison and ambiguous-weight exclusion');
