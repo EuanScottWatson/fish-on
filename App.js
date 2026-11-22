@@ -4,6 +4,7 @@ import {Alert, AppState, FlatList, Image, Linking, KeyboardAvoidingView, Modal, 
 import MapView, {Marker, UrlTile} from 'react-native-maps';
 import {detailTitle, safeSpeciesEntries} from './details';
 import {licensedGuidePhoto, matchingTaxonPhoto} from './guide-images';
+import {boxFromDrag} from './box-geometry';
 import * as ImagePicker from 'expo-image-picker';
 import {Directory, File, Paths} from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -28,12 +29,22 @@ function AppButton({title,onPress,secondary=false}){return <Pressable onPress={o
 function Input({label,value,onChangeText,placeholder,keyboardType,multiline}){return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput style={[styles.input,multiline&&styles.multiline]} value={String(value??'')} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#8e9c92" keyboardType={keyboardType} multiline={multiline} autoCapitalize="sentences" /></View>}
 function Chip({label,active,onPress}){return <Pressable onPress={onPress} style={[styles.chip,active&&styles.chipActive]}><Text style={[styles.chipText,active&&styles.chipTextActive]}>{label}</Text></Pressable>}
 function FishBox({asset, box, onChange}) {
- const screen = useWindowDimensions(), [drawing,setDrawing]=useState(false), start=useRef(null), [preview,setPreview]=useState(null);
- const ratio=(asset.width||1)/(asset.height||1), width=Math.min(screen.width-40,300*ratio), height=width/ratio;
- const point=e=>({x:Math.max(0,Math.min(1,e.nativeEvent.locationX/width)),y:Math.max(0,Math.min(1,e.nativeEvent.locationY/height))});
- const pan=useMemo(()=>PanResponder.create({onStartShouldSetPanResponder:()=>drawing,onMoveShouldSetPanResponder:()=>drawing,onPanResponderGrant:e=>{let p=point(e);start.current=p;setPreview(null)},onPanResponderMove:e=>{if(!start.current)return;let p=point(e),q=start.current;setPreview({x:Math.min(q.x,p.x),y:Math.min(q.y,p.y),w:Math.abs(p.x-q.x),h:Math.abs(p.y-q.y)})},onPanResponderRelease:e=>{if(!start.current)return;let p=point(e),q=start.current,r={x:Math.min(q.x,p.x),y:Math.min(q.y,p.y),w:Math.abs(p.x-q.x),h:Math.abs(p.y-q.y)};if(r.w>.02&&r.h>.02)onChange(r);start.current=null;setPreview(null);setDrawing(false)},onPanResponderTerminate:()=>{start.current=null;setPreview(null);setDrawing(false)}}),[drawing,width,height,onChange]);
- let r=preview||box;return <View style={{alignItems:'center',marginVertical:12}}><View style={{width,height}} {...pan.panHandlers}><Image source={{uri:asset.uri}} style={{width,height}} resizeMode="stretch"/>{r&&<View pointerEvents="none" style={{position:'absolute',left:r.x*width,top:r.y*height,width:r.w*width,height:r.h*height,borderWidth:3,borderColor:'#e1ef6e',backgroundColor:'transparent'}}/>}</View><AppButton secondary title={drawing?'Drag a box around the fish':'Draw or adjust fish box'} onPress={()=>setDrawing(!drawing)}/></View>
+ const screen=useWindowDimensions(),[drawing,setDrawing]=useState(false),[preview,setPreview]=useState(null),start=useRef(null);
+ const ratio=(asset.width||1)/(asset.height||1),width=Math.max(1,Math.min(screen.width-40,Math.max(1,screen.height-260)*ratio)),height=width/ratio;
+ const finish=()=>{start.current=null;setPreview(null)};
+ const pan=useMemo(()=>PanResponder.create({
+  onStartShouldSetPanResponder:()=>true,
+  onMoveShouldSetPanResponder:()=>true,
+  onPanResponderTerminationRequest:()=>false,
+  onPanResponderGrant:e=>{start.current={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};setPreview(null)},
+  onPanResponderMove:(_,gesture)=>{if(start.current)setPreview(boxFromDrag(start.current.x,start.current.y,gesture.dx,gesture.dy,width,height))},
+  onPanResponderRelease:(_,gesture)=>{if(start.current){let next=boxFromDrag(start.current.x,start.current.y,gesture.dx,gesture.dy,width,height);if(next&&next.w>.02&&next.h>.02){onChange(next);setDrawing(false)}}finish()},
+  onPanResponderTerminate:finish
+ }),[width,height,onChange]);
+ const outline=r=>r&&<View pointerEvents="none" style={{position:'absolute',left:r.x*width,top:r.y*height,width:r.w*width,height:r.h*height,borderWidth:3,borderColor:'#e1ef6e',backgroundColor:'transparent'}}/>;
+ return <View style={{alignItems:'center',marginVertical:12}}><View style={{width,height}}><Image source={{uri:asset.uri}} style={{width,height}} resizeMode="stretch"/>{outline(box)}</View><AppButton secondary title="Draw or adjust fish box" onPress={()=>setDrawing(true)}/><Modal visible={drawing} animationType="slide" onRequestClose={()=>{finish();setDrawing(false)}}><SafeAreaView style={styles.safe}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Select the fish</Text><Pressable accessibilityRole="button" accessibilityLabel="Cancel fish selection" onPress={()=>{finish();setDrawing(false)}}><Text style={styles.close}>×</Text></Pressable></View><View style={{flex:1,alignItems:'center',justifyContent:'center',paddingHorizontal:20}}><Text style={[styles.paragraph,{textAlign:'center'}]}>Drag from one corner to the opposite corner. Release to use the box.</Text><View style={{width,height}} {...pan.panHandlers}><Image pointerEvents="none" source={{uri:asset.uri}} style={{width,height}} resizeMode="stretch"/>{outline(preview||box)}</View><Text style={styles.small}>Your original photo stays unchanged.</Text></View></SafeAreaView></Modal></View>
 }
+
 export default function App(){
  const [base,setBase]=useState(DEFAULT_SERVER),[urlDraft,setUrlDraft]=useState(DEFAULT_SERVER),[tab,setTab]=useState('Catches'),[catches,setCatches]=useState([]),[fish,setFish]=useState([]),[surveys,setSurveys]=useState([]),[status,setStatus]=useState('Connecting…'),[observations,setObservations]=useState([]),[observationStatus,setObservationStatus]=useState('Zoom in and search this area.');
  const [mapRegion,setMapRegion]=useState(UK),[profileInfo,setProfileInfo]=useState(null),[drafts,setDrafts]=useState([]),[cropRect,setCropRect]=useState(null),[draftsLoaded,setDraftsLoaded]=useState(false),[heroSeed,setHeroSeed]=useState(()=>Math.floor(Math.random()*100000)),[fishImages,setFishImages]=useState({}),[imagesReady,setImagesReady]=useState(false),[rangeKey,setRangeKey]=useState(null),[rangeStatus,setRangeStatus]=useState('');
