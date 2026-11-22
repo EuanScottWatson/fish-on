@@ -1,0 +1,17 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const Module = require('node:module');
+const babel = require('@babel/core');
+const file = path.join(__dirname, '..', 'quotes.js');
+const code = babel.transformSync(fs.readFileSync(file, 'utf8'), {filename:file, configFile:false, babelrc:false, plugins:['@babel/plugin-transform-modules-commonjs']}).code;
+const mod = new Module(file, module);mod.filename=file;mod.paths=module.paths;mod._compile(code, file);
+const {FISHING_QUOTES, nextQuoteIndex} = mod.exports;
+assert.equal(FISHING_QUOTES[0], "You should've seen the one that got away!");
+assert.equal(nextQuoteIndex(null), 0);
+assert.equal(nextQuoteIndex(0), 1);
+assert.equal(nextQuoteIndex(FISHING_QUOTES.length - 1), 0);
+assert.equal(nextQuoteIndex(-1), 0);
+assert.equal(nextQuoteIndex(NaN), 0);
+assert.equal(new Set(FISHING_QUOTES).size, FISHING_QUOTES.length);
+console.log('PASS favourite quote, sequential rotation, wraparound and invalid saved values');
