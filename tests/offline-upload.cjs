@@ -7,10 +7,12 @@ function loadModule(file,stub){const source=fs.readFileSync(file,'utf8');const c
 const root=path.resolve(__dirname,'..');
 const {makeDraft,putDraft,removeDraft,photoMetadata}=loadModule(path.join(root,'drafts.js'));
 const {appendPhoto}=loadModule(path.join(root,'photo-upload.js'));
+const {copyDraftPhoto}=loadModule(path.join(root,'draft-photo.js'));
 const {convertFormDataAsync}=loadModule(path.join(root,'node_modules/expo/build/winter/fetch/convertFormData.js'));
 (async()=>{
  assert.deepEqual(photoMetadata({GPSLatitude:51.5,GPSLatitudeRef:'N',GPSLongitude:.125,GPSLongitudeRef:'W',DateTimeOriginal:'2026:05:17 12:15:00'}),{lat:'51.5',lon:'-0.125',date:'17/05/2026'});
  assert.deepEqual(photoMetadata({GPSLatitude:91,GPSLongitude:1}),{});assert.deepEqual(photoMetadata(null),{});
+ let completed=false;class FakeDirectory{constructor(){this.uri='file:///documents/fish-on-drafts/'}create(){}}class FakeFile{constructor(a,b){this.uri=b?'file:///documents/fish-on-drafts/'+b:a}async copy(){await new Promise(r=>setTimeout(r,20));completed=true}}let stored=await copyDraftPhoto({uri:'file:///cache/fish.jpg'},'draft',{File:FakeFile,Directory:FakeDirectory,Paths:{document:'file:///documents'},randomUUID:()=>'unique'});assert.equal(completed,true,'draft photo must be fully copied before returning');assert.match(stored.uri,/fish-on-drafts/);class BrokenFile extends FakeFile{async copy(){throw Error('disk full')}}await assert.rejects(()=>copyDraftPhoto({uri:'file:///cache/fish.jpg'},'draft',{File:BrokenFile,Directory:FakeDirectory,Paths:{document:'x'},randomUUID:()=>'unique'}),/disk full/);
  let id='a'.repeat(32),draft=makeDraft(id,{species:'Common carp',date:'17/05/2026'},null,false);assert.equal(draft.ready,false);let drafts=putDraft([],draft);drafts=putDraft(drafts,makeDraft(id,draft.fields,null,true));assert.equal(drafts.length,1);assert.equal(drafts[0].ready,true);assert.deepEqual(removeDraft(drafts,id),[]);
  class ExpoFile {constructor(uri){this.uri=uri;this.name='fish.jpg';this.type='image/jpeg'}async bytes(){return new Uint8Array(fs.readFileSync(this.uri))}}
  const pairs=[];let form={append:(name,value)=>pairs.push([name,value]),entries:()=>pairs};appendPhoto(form,{uri:path.join(__dirname,'fixtures/catch.jpg')},ExpoFile);for(const [k,v] of Object.entries({id,species:'Common carp',date:'2026-05-17',lat:'51.5',lon:'-0.125'}))form.append(k,v);
