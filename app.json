@@ -1,13 +1,23 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Fish On",
+    "slug": "fishbook",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "uk.fishbook.homelab",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Fish On connects to your home server to sync your catches.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoads": true
+        },
+        "NSPhotoLibraryUsageDescription": "Choose fish photos to identify and add to your journal.",
+        "NSLocationWhenInUseUsageDescription": "Use your current location to record where you caught a fish."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,6 +29,20 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose fish photos to identify and add to your journal."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Use your current location to record where you caught a fish."
+        }
+      ]
+    ]
   }
 }
