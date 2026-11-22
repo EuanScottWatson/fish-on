@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "uk.fishbook.homelab",
@@ -16,7 +16,9 @@
           "NSAllowsArbitraryLoads": true
         },
         "NSPhotoLibraryUsageDescription": "Choose fish photos to identify and add to your journal.",
-        "NSLocationWhenInUseUsageDescription": "Use your current location to record where you caught a fish."
+        "NSLocationWhenInUseUsageDescription": "Use your current location to record where you caught a fish.",
+        "NSCameraUsageDescription": "Take a photo of your catch and save it to Fish On.",
+        "NSPhotoLibraryAddUsageDescription": "Save the fish photos you take to your Photos library."
       }
     },
     "android": {
@@ -34,13 +36,21 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Choose fish photos to identify and add to your journal."
+          "photosPermission": "Choose fish photos to identify and add to your journal.",
+          "cameraPermission": "Take a photo of your catch."
         }
       ],
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "Use your current location to record where you caught a fish."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Choose fish photos for your journal.",
+          "savePhotosPermission": "Save the fish photos you take to your Photos library."
         }
       ]
     ]

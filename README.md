@@ -13,3 +13,7 @@ This is an Expo / React Native app with native views, native maps, photo selecti
 The app defaults to `http://192.168.32.48:7782` and allows an alternative server address under Settings. The existing server has no login and uses HTTP, so use it only on trusted local or private networks. An internet-facing deployment needs authentication and HTTPS before it is safe to expose. An iOS build has not been signed or tested on an iPhone yet.
 
 The native guide and map are an initial implementation. The map shows up to 500 survey points in the visible area; zoom in for more. Some profile content needs an internet connection. Photo identification transmits the photo to Naturalis NIA and may be rate limited.
+
+## Offline catches
+
+Catches saved without a species are kept as review drafts on the phone. Confirm a species and save to queue the catch for upload. Confirmed drafts retry while the app is active and when it returns to the foreground; a stable catch ID prevents duplicate server records after an interrupted response. Pending photos are copied into the app's document storage before the draft is saved. The existing server still provides shared catch storage; photo identification and distribution observations need a connection. The native implementation requires real-device testing, including photo permissions, offline storage, crop gestures, and reinstall/update behaviour.
