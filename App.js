@@ -8,7 +8,7 @@ import {boxFromDrag} from './box-geometry';
 import {FISHING_QUOTES, nextQuoteIndex} from './quotes';
 import Trips from './Trips';
 import Statistics from './Statistics';
-import Records from './Records';
+import Records from './PersonalRecordsScreen';
 import * as ImagePicker from 'expo-image-picker';
 import {Directory, File, Paths} from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library/legacy';

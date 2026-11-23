@@ -13,6 +13,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Check case-insensitive filenames
+        run: node tests/check-case-collisions.cjs
       - name: Install dependencies
         run: npm ci
       - name: Generate iOS project
