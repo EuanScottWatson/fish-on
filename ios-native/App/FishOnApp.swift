@@ -9,7 +9,7 @@ struct FishOnApp: App {
             RootView().environmentObject(store).preferredColorScheme(.dark)
                 .tint(Color(red: 0.79, green: 0.84, blue: 0.53))
                 .environment(\.locale, Locale(identifier: "en_GB"))
-                .task { store.loadDrafts(); await store.refresh(); await store.syncDrafts() }
+                .task { store.loadDrafts(); store.loadCachedRecords(); await store.refresh(); await store.syncDrafts() }
         }
     }
 }
@@ -23,6 +23,8 @@ final class FishStore: ObservableObject {
     @Published var syncing = false
     @Published var trips: [Record] = []
     @Published var fish: [Record] = []
+    @Published var guideIndex: [String: [String: Any]] = [:]
+    @Published var guideIndexError: String?
     @Published var connectedAddress: String?
     @Published var error: String?
     @Published var guideError: String?
@@ -57,8 +59,11 @@ final class FishStore: ObservableObject {
             do {
                 let health = try await fetch("/health", base: base)
                 guard let body = try JSONSerialization.jsonObject(with: health) as? [String: Any], body["ok"] as? Bool == true else { throw URLError(.badServerResponse) }
-                let loadedCatches = try decodeRecords(await fetch("/api/catches", base: base))
-                let loadedTrips = try decodeRecords(await fetch("/api/trips", base: base))
+                let catchData = try await fetch("/api/catches", base: base)
+                let tripData = try await fetch("/api/trips", base: base)
+                let loadedCatches = try decodeRecords(catchData)
+                let loadedTrips = try decodeRecords(tripData)
+                cacheRecords(catchData: catchData, tripData: tripData)
                 catches = loadedCatches
                 trips = loadedTrips
                 connectedAddress = base
@@ -115,6 +120,7 @@ struct HomeView: View {
                     VStack(alignment: .leading) { Text("\(store.catches.count)").font(.title.bold()); Text("Catches").foregroundStyle(.secondary) }
                     VStack(alignment: .leading) { Text("\(store.trips.count)").font(.title.bold()); Text("Trips").foregroundStyle(.secondary) }
                 }.padding(.vertical)
+                NavigationLink { StatisticsView() } label: { Label("Your statistics", systemImage: "chart.bar") }
                 Text("Recent catches").font(.title2.bold())
                 ForEach(Array(store.catches.prefix(4))) { item in NavigationLink { CatchDetail(item: item) } label: { CatchRow(item: item) }.buttonStyle(.plain) }
 
@@ -183,22 +189,40 @@ struct GuideView: View {
     @EnvironmentObject private var store: FishStore
     @State private var search = ""
     @State private var ukOnly = true
-    var matches: [Record] { Array(store.fish.lazy.filter { (!ukOnly || $0.flag("uk")) && (search.isEmpty || "\($0.string("common")) \($0.string("name"))".localizedCaseInsensitiveContains(search)) }.prefix(150)) }
+    @State private var water = "All"
+    @State private var sort = "Popular"
+    var matches: [Record] {
+        let filtered = store.fish.filter { item in
+            let names = ([item.string("common"), item.string("name")] + item.strings("aliases")).joined(separator: " ")
+            return (!ukOnly || item.flag("uk")) && (water == "All" || item.flag(water == "Fresh" ? "fresh" : water == "Marine" ? "salt" : "brack")) && (search.isEmpty || names.localizedCaseInsensitiveContains(search))
+        }
+        return Array(filtered.sorted { a, b in
+            if sort == "Popular" && store.popularity(a) != store.popularity(b) { return store.popularity(a) > store.popularity(b) }
+            if sort == "Length" && (a.number("length") ?? 0) != (b.number("length") ?? 0) { return (a.number("length") ?? 0) > (b.number("length") ?? 0) }
+            return (sort == "Scientific" ? a.string("name") : a.string("common")).localizedCaseInsensitiveCompare(sort == "Scientific" ? b.string("name") : b.string("common")) == .orderedAscending
+        }.prefix(150))
+    }
     var body: some View {
         List {
             Toggle("Recorded in the UK", isOn: $ukOnly)
+            Picker("Water", selection: $water) { ForEach(["All", "Fresh", "Marine", "Brackish"], id: \.self) { Text($0) } }
+            Picker("Sort", selection: $sort) { ForEach(["Popular", "Name", "Scientific", "Length"], id: \.self) { Text($0) } }
+            if sort == "Popular" { Text(store.guideIndexError ?? "Popularity uses worldwide iNaturalist observations.").font(.footnote).foregroundStyle(.secondary) }
             if store.fish.isEmpty { Text(store.guideError ?? "Loading fish guide…").foregroundStyle(.secondary) }
-            ForEach(matches) { item in NavigationLink { FishDetail(item: item) } label: { VStack(alignment: .leading) { Text(item.string("common").isEmpty ? item.string("name") : item.string("common")); Text(item.string("name")).font(.caption).italic().foregroundStyle(.secondary) } } }
+            ForEach(matches) { item in NavigationLink { FishDetail(item: item) } label: { HStack { if let photo = store.guidePhoto(item) { AsyncImage(url: photo.url) { image in image.resizable().scaledToFill() } placeholder: { Color.gray.opacity(0.2) }.frame(width: 60, height: 60).clipped() }; VStack(alignment: .leading) { Text(item.string("common").isEmpty ? item.string("name") : item.string("common")); Text(item.string("name")).font(.caption).italic().foregroundStyle(.secondary) } } } }
             if !matches.isEmpty { Text("Showing up to 150 results. Search to narrow the list.").font(.footnote).foregroundStyle(.secondary) }
-        }.navigationTitle("Fish guide").searchable(text: $search).task { await store.loadGuide() }.refreshable { await store.loadGuide() }
+        }.navigationTitle("Fish guide").searchable(text: $search).task { await store.loadGuide(); await store.loadGuideIndex() }.refreshable { await store.loadGuide() }
     }
 }
 
 struct FishDetail: View {
+    @EnvironmentObject private var store: FishStore
     let item: Record
     var body: some View {
         List {
-            Section { Text(item.string("name")).italic(); if !item.string("biology").isEmpty { Text(item.string("biology")) } }
+            Section { if let photo = store.guidePhoto(item) { AsyncImage(url: photo.url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }; Text(photo.credit).font(.caption).foregroundStyle(.secondary) }; Text(item.string("name")).italic(); if !item.string("biology").isEmpty { Text(item.string("biology")) } }
+            if let tip = fishingTip(item.string("name")) { Section("Fishing") { Text(tip) } }
+            Section("Where it has been recorded") { SpeciesRangeView(name: item.string("name")) }
             Section("Habitat") { Text([item.flag("fresh") ? "Freshwater" : "", item.flag("salt") ? "Marine" : "", item.flag("brack") ? "Brackish" : ""].filter { !$0.isEmpty }.joined(separator: ", ")) }
             if !item.strings("countries").isEmpty { Section("Recorded countries") { Text(item.strings("countries").joined(separator: ", ")) } }
             Section { Text("FishBase, Froese & Pauly (eds.), 06/2026, CC BY-NC 4.0. Records do not guarantee current presence.").font(.footnote).foregroundStyle(.secondary) }
@@ -208,17 +232,31 @@ struct FishDetail: View {
 
 struct TripsView: View {
     @EnvironmentObject private var store: FishStore
+    @State private var adding = false
     var body: some View {
         List(store.trips) { item in NavigationLink { TripDetail(item: item) } label: { VStack(alignment: .leading) { Text(item.string("place").isEmpty ? "Fishing trip" : item.string("place")); Text(britishDate(item.string("date"))).font(.subheadline).foregroundStyle(.secondary) } } }
             .navigationTitle("Trips").refreshable { await store.refresh() }
+            .toolbar { ToolbarItem(placement: .primaryAction) { Button("Log trip") { adding = true } } }
+            .sheet(isPresented: $adding) { NavigationStack { TripEditor(item: nil) } }
     }
 }
 struct TripDetail: View {
+    @EnvironmentObject private var store: FishStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
+    @State private var deleting = false
+    @State private var message = ""
     let item: Record
     var body: some View {
         List { ForEach(["date", "end_date", "start_time", "end_time", "method", "bait", "target_species", "weather", "notes"], id: \.self) { key in
             if !item.string(key).isEmpty { LabeledContent(key.replacingOccurrences(of: "_", with: " ").capitalized, value: key.contains("date") ? britishDate(item.string(key)) : item.string(key)) }
-        } }.navigationTitle(item.string("place").isEmpty ? "Fishing trip" : item.string("place"))
+        }
+            Section("Catches") { ForEach(store.catches.filter { item.strings("catch_ids").contains($0.id) }) { catchItem in NavigationLink { CatchDetail(item: catchItem) } label: { CatchRow(item: catchItem) } } }
+            TripPhotoPicker(trip: item)
+            Section { Button("Edit trip") { editing = true }; Button("Delete trip", role: .destructive) { deleting = true }; if !message.isEmpty { Text(message).foregroundStyle(.orange) } }
+        }.navigationTitle(item.string("place").isEmpty ? "Fishing trip" : item.string("place"))
+            .sheet(isPresented: $editing) { NavigationStack { TripEditor(item: item) } }
+            .confirmationDialog("Delete this trip? Catches will be kept.", isPresented: $deleting) { Button("Delete trip", role: .destructive) { Task { do { try await store.delete(path: "/api/trips/" + item.id); await store.refresh(); dismiss() } catch { message = error.localizedDescription } } } }
     }
 }
 struct CatchMapView: View {

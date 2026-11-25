@@ -11,6 +11,7 @@ struct CatchEditor: View {
     @State private var camera = false
     @State private var crop = false
     @State private var mapPicker = false
+    @StateObject private var location = CurrentLocation()
     @State private var box: CGRect?
     @State private var photoData: Data?
     @State private var suggestions: [[String: Any]] = []
@@ -51,6 +52,8 @@ struct CatchEditor: View {
                 TextField("Notes", text: $draft.notes, axis: .vertical).lineLimit(3...8)
             }
             Section("Location") {
+                Button("Use my current location") { location.request() }
+                if let error = location.error { Text(error).foregroundStyle(.orange) }
                 Button("Choose on map") { mapPicker = true }
                 TextField("Latitude", text: $draft.lat).keyboardType(.numbersAndPunctuation)
                 TextField("Longitude", text: $draft.lon).keyboardType(.numbersAndPunctuation)
@@ -62,6 +65,7 @@ struct CatchEditor: View {
         }
         .navigationTitle(editingExisting ? "Edit catch" : "Log a catch")
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        .onChange(of: location.coordinate?.latitude) { _ in if let point = location.coordinate { draft.lat = String(format: "%.6f", point.latitude); draft.lon = String(format: "%.6f", point.longitude) } }
         .onAppear {
             if let date = dateFormat.date(from: draft.date) { hasDate = true; selectedDate = date }
             if let name = draft.photoFile { do { photoData = try DraftStorage.photo(name) } catch { message = "Could not load the saved photo: \(error.localizedDescription)" } }

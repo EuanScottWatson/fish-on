@@ -7,7 +7,7 @@ import ImageIO
 import CoreLocation
 import UniformTypeIdentifiers
 
-struct CatchDraft: Codable, Identifiable {
+struct CatchDraft: Codable, Identifiable, Equatable {
     var id = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     var species = ""
     var scientific = ""
@@ -150,7 +150,7 @@ extension FishStore {
             do {
                 let photo = try draft.photoFile.map { try DraftStorage.photo($0) }
                 _ = try await sendMultipart(path: "/api/catches", fields: draft.fields, photo: photo)
-                try removeDraft(draft)
+                if drafts.first(where: { $0.id == draft.id }) == draft { try removeDraft(draft) }
             } catch { syncError = "Waiting to sync: \(error.localizedDescription)"; return }
         }
         syncError = nil
@@ -173,5 +173,24 @@ extension FishStore {
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             throw FishError.message(object?["error"] as? String ?? "Could not delete the record.")
         }
+    }
+}
+
+extension FishStore {
+    func loadCachedRecords() {
+        do {
+            let root = try DraftStorage.directory
+            let catchFile = root.appendingPathComponent("catches-cache.json")
+            let tripFile = root.appendingPathComponent("trips-cache.json")
+            if FileManager.default.fileExists(atPath: catchFile.path) { catches = try decodeRecords(Data(contentsOf: catchFile)) }
+            if FileManager.default.fileExists(atPath: tripFile.path) { trips = try decodeRecords(Data(contentsOf: tripFile)) }
+        } catch { syncError = "Saved journal could not be read: \(error.localizedDescription)" }
+    }
+    func cacheRecords(catchData: Data, tripData: Data) {
+        do {
+            let root = try DraftStorage.directory
+            try catchData.write(to: root.appendingPathComponent("catches-cache.json"), options: [.atomic, .completeFileProtectionUnlessOpen])
+            try tripData.write(to: root.appendingPathComponent("trips-cache.json"), options: [.atomic, .completeFileProtectionUnlessOpen])
+        } catch { syncError = "Journal could not be cached for offline viewing: \(error.localizedDescription)" }
     }
 }

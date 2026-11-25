@@ -38,6 +38,7 @@ targets:
         UILaunchScreen: {}
         NSLocalNetworkUsageDescription: Fish On connects to your home server to show your fishing journal.
         NSCameraUsageDescription: Take photographs of your catches.
+        NSLocationWhenInUseUsageDescription: Use your location to record where you fished.
         NSPhotoLibraryUsageDescription: Select photos of catches.
         NSPhotoLibraryAddUsageDescription: Save catch photographs to Photos.
         NSAppTransportSecurity:
