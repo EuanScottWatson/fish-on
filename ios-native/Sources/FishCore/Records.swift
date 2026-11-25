@@ -55,3 +55,21 @@ public func multipartBody(fields: [String: String], photo: Data?, boundary: Stri
     append("--\(boundary)--\r\n")
     return body
 }
+
+/// Convert an explicitly labelled catch weight to grams, rejecting ambiguous input.
+public func weightInGrams(_ value: String) -> Double? {
+    let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    func matches(_ pattern: String) -> [String]? {
+        guard let regex = try? NSRegularExpression(pattern: pattern), let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
+        return (0..<match.numberOfRanges).map { index in Range(match.range(at: index), in: text).map { String(text[$0]) } ?? "" }
+    }
+    if let parts = matches(#"^(\d+(?:\.\d+)?)\s*(kg|kilograms?|g|grams?|oz|ounces?)$"#), let number = Double(parts[1]), number > 0, number.isFinite {
+        if parts[2] == "kg" || parts[2].hasPrefix("kilogram") { return number * 1000 }
+        if parts[2] == "oz" || parts[2].hasPrefix("ounce") { return number * 28.349523125 }
+        return number
+    }
+    if let parts = matches(#"^(\d+(?:\.\d+)?)\s*(?:lb|lbs|pounds?)(?:\s*(\d+(?:\.\d+)?)\s*(?:oz|ounces?))?$"#), let pounds = Double(parts[1]), let ounces = Double(parts[2].isEmpty ? "0" : parts[2]), pounds.isFinite, ounces.isFinite, ounces < 16, pounds * 16 + ounces > 0 {
+        return pounds * 453.59237 + ounces * 28.349523125
+    }
+    return nil
+}

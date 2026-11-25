@@ -25,4 +25,10 @@ final class FishCoreTests: XCTestCase {
         XCTAssertNotNil(result.range(of: photo))
         XCTAssertTrue(result.suffix(Data("--test-boundary--\r\n".utf8).count).elementsEqual(Data("--test-boundary--\r\n".utf8)))
     }
+    func testWeightConversionAndAmbiguity() {
+        XCTAssertEqual(weightInGrams("2 kg"), 2000)
+        XCTAssertEqual(weightInGrams("1 lb 8 oz") ?? 0, 680.388555, accuracy: 0.01)
+        XCTAssertNil(weightInGrams("12"))
+        XCTAssertNil(weightInGrams("1 lb 16 oz"))
+    }
 }

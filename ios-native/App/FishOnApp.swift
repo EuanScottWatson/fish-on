@@ -23,6 +23,7 @@ final class FishStore: ObservableObject {
     @Published var draftError: String?
     @Published var syncError: String?
     @Published var syncing = false
+    var syncRequested = false
     @Published var trips: [Record] = []
     @Published var fish: [Record] = []
     @Published var guideIndex: [String: [String: Any]] = [:]
@@ -36,6 +37,7 @@ final class FishStore: ObservableObject {
     var addresses: [String] {
         #if DEBUG
         if ProcessInfo.processInfo.environment["FISH_UI_TEST"] == "1" { return ["http://127.0.0.1:18782"] }
+        if ProcessInfo.processInfo.environment["FISH_UI_TEST"] == "offline" { return ["http://127.0.0.1:18783"] }
         #endif
         var result: [String] = []
         for address in [customAddress.trimmingCharacters(in: .whitespacesAndNewlines)] + defaults {
@@ -111,16 +113,21 @@ struct RootView: View {
 struct HomeView: View {
     @EnvironmentObject private var store: FishStore
     @Environment(\.logCatch) private var logCatch
+    @AppStorage("quote-index") private var quoteIndex = -1
+    private let quotes = ["You should've seen the one that got away!", "Just one more cast…", "The fish are biting. Just not my hook.", "It’s called fishing, not catching!", "They were biting yesterday.", "I’m not catching fish. I’m collecting data.", "There’s always a bigger fish.", "The legend grows with every catch.", "Fish tremble at the mention of my name."]
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("FISH ON · NATIVE PREVIEW").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.secondary)
-                Text("You should've seen the one that got away!").font(.largeTitle.bold())
+                Text(quotes[max(0, quoteIndex) % quotes.count]).font(.largeTitle.bold())
                 Text("Your fishing journal, close at hand.").foregroundStyle(.secondary)
                 Button("Log a catch") { logCatch() }.buttonStyle(.borderedProminent)
                 if let error = store.draftError ?? store.syncError { Text(error).foregroundStyle(.orange) }
                 if let error = store.error { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.orange) }
                 else if let address = store.connectedAddress { Label("Connected · \(address)", systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.secondary) }
+                if let hero = store.catches.filter({ !$0.string("photo").isEmpty }).randomElement(), let url = store.photoURL(hero.string("photo")) {
+                    NavigationLink { CatchDetail(item: hero) } label: { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Color.gray.opacity(0.2).frame(height: 160) } }.accessibilityLabel("View catch photo")
+                }
                 HStack(spacing: 28) {
                     VStack(alignment: .leading) { Text("\(store.catches.count)").font(.title.bold()); Text("Catches").foregroundStyle(.secondary) }
                     VStack(alignment: .leading) { Text("\(store.trips.count)").font(.title.bold()); Text("Trips").foregroundStyle(.secondary) }
@@ -132,7 +139,8 @@ struct HomeView: View {
                 ForEach(Array(store.catches.prefix(4))) { item in NavigationLink { CatchDetail(item: item) } label: { CatchRow(item: item) }.buttonStyle(.plain) }
 
             }.padding()
-        }.navigationTitle("Fish On").refreshable { await store.refresh() }
+        }.navigationTitle("Fish On").refreshable { await store.refresh(); await store.syncDrafts() }
+            .onAppear { quoteIndex = (quoteIndex + 1) % quotes.count }
     }
 }
 
@@ -173,11 +181,12 @@ struct CatchDetail: View {
     let item: Record
     @State private var editing = false
     @State private var confirmingDelete = false
+    @State private var gallery = false
     @State private var error = ""
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
-            if let url = store.photoURL(item.string("photo")) { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().frame(maxWidth: .infinity, minHeight: 160) } }
+            if let url = store.photoURL(item.string("photo")) { Button { gallery = true } label: { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().frame(maxWidth: .infinity, minHeight: 160) } }.accessibilityLabel("View full photo") }
             Text(item.string("scientific")).italic().foregroundStyle(.secondary)
             Text("\(item.string("place")) · \(britishDate(item.string("date")))")
             ForEach(["weight", "length", "tackle", "notes"], id: \.self) { key in
@@ -188,6 +197,7 @@ struct CatchDetail: View {
             if !error.isEmpty { Text(error).foregroundStyle(.orange) }
         }.frame(maxWidth: .infinity, alignment: .leading).padding() }.navigationTitle(item.string("species")).navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $editing) { NavigationStack { CatchEditor(draft: CatchDraft(item), editingExisting: true) } }
+            .fullScreenCover(isPresented: $gallery) { PhotoGallery(selectedID: item.id) }
             .confirmationDialog("Delete this catch and its photo?", isPresented: $confirmingDelete) { Button("Delete", role: .destructive) { Task { do { try await store.delete(path: "/api/catches/" + item.id); await store.refresh(); dismiss() } catch { self.error = error.localizedDescription } } } }
     }
 }
@@ -198,27 +208,35 @@ struct GuideView: View {
     @State private var ukOnly = true
     @State private var water = "All"
     @State private var sort = "Popular"
+    @State private var collection = "All"
+    @State private var limit = 150
     var matches: [Record] {
         let filtered = store.fish.filter { item in
             let names = ([item.string("common"), item.string("name")] + item.strings("aliases")).joined(separator: " ")
-            return (!ukOnly || item.flag("uk")) && (water == "All" || item.flag(water == "Fresh" ? "fresh" : water == "Marine" ? "salt" : "brack")) && (search.isEmpty || names.localizedCaseInsensitiveContains(search))
+            let caught = store.catches.contains { catchItem in
+                let scientific = catchItem.string("scientific")
+                return (!scientific.isEmpty && scientific.localizedCaseInsensitiveCompare(item.string("name")) == .orderedSame) || (!item.string("common").isEmpty && catchItem.string("species").localizedCaseInsensitiveCompare(item.string("common")) == .orderedSame)
+            }
+            return (!ukOnly || item.flag("uk")) && (water == "All" || item.flag(water == "Fresh" ? "fresh" : water == "Marine" ? "salt" : "brack")) && (collection == "All" || (collection == "Game" && item.flag("game")) || (collection == "Caught" && caught)) && (search.isEmpty || names.localizedCaseInsensitiveContains(search))
         }
         return Array(filtered.sorted { a, b in
             if sort == "Popular" && store.popularity(a) != store.popularity(b) { return store.popularity(a) > store.popularity(b) }
             if sort == "Length" && (a.number("length") ?? 0) != (b.number("length") ?? 0) { return (a.number("length") ?? 0) > (b.number("length") ?? 0) }
             return (sort == "Scientific" ? a.string("name") : a.string("common")).localizedCaseInsensitiveCompare(sort == "Scientific" ? b.string("name") : b.string("common")) == .orderedAscending
-        }.prefix(150))
+        }.prefix(limit))
     }
     var body: some View {
         List {
             Toggle("Recorded in the UK", isOn: $ukOnly)
             Picker("Water", selection: $water) { ForEach(["All", "Fresh", "Marine", "Brackish"], id: \.self) { Text($0) } }
+            Picker("Collection", selection: $collection) { ForEach(["All", "Game", "Caught"], id: \.self) { Text($0) } }
             Picker("Sort", selection: $sort) { ForEach(["Popular", "Name", "Scientific", "Length"], id: \.self) { Text($0) } }
             if sort == "Popular" { Text(store.guideIndexError ?? "Popularity uses worldwide iNaturalist observations.").font(.footnote).foregroundStyle(.secondary) }
             if store.fish.isEmpty { Text(store.guideError ?? "Loading fish guide…").foregroundStyle(.secondary) }
             ForEach(matches) { item in NavigationLink { FishDetail(item: item) } label: { HStack { if let photo = store.guidePhoto(item) { AsyncImage(url: photo.url) { image in image.resizable().scaledToFill() } placeholder: { Color.gray.opacity(0.2) }.frame(width: 60, height: 60).clipped() }; VStack(alignment: .leading) { Text(item.string("common").isEmpty ? item.string("name") : item.string("common")); Text(item.string("name")).font(.caption).italic().foregroundStyle(.secondary) } } } }
-            if !matches.isEmpty { Text("Showing up to 150 results. Search to narrow the list.").font(.footnote).foregroundStyle(.secondary) }
+            if matches.count == limit { Button("Show more fish") { limit += 150 } }
         }.navigationTitle("Fish guide").searchable(text: $search).task { await store.loadGuide(); await store.loadGuideIndex() }.refreshable { await store.loadGuide() }
+            .onChange(of: search) { _ in limit = 150 }.onChange(of: ukOnly) { _ in limit = 150 }.onChange(of: water) { _ in limit = 150 }.onChange(of: sort) { _ in limit = 150 }.onChange(of: collection) { _ in limit = 150 }
     }
 }
 

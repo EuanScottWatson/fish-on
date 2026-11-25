@@ -60,6 +60,9 @@ struct CountriesView: View {
         }.navigationTitle("Countries fished").task { await load() }
             .sheet(item: $selecting) { selection in NavigationStack {
                 List {
+                    if search.isEmpty, let code = suggestCountry(latitude: selection.record.number(selection.kind == "trip" ? "latitude" : "lat"), longitude: selection.record.number(selection.kind == "trip" ? "longitude" : "lon")), let suggestion = countries.first(where: { $0.code == code }) {
+                        Section("Possible match from the map") { Button("\(suggestion.flag)  \(suggestion.name)") { Task { await assign(suggestion.code, to: selection) } }; Text("Approximate boundaries can be wrong. Confirm before choosing.").font(.footnote) }
+                    }
                     if chosen(selection.kind, selection.record.id) != nil { Button("Clear country", role: .destructive) { Task { await assign(nil, to: selection) } } }
                     ForEach(countries.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { country in
                         Button("\(country.flag)  \(country.name)") { Task { await assign(country.code, to: selection) } }

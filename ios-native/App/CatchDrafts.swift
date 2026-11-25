@@ -141,8 +141,13 @@ extension FishStore {
         return object
     }
     func syncDrafts() async {
-        guard !syncing, draftError == nil, connectedAddress != nil else { return }
-        syncing = true; defer { syncing = false }
+        guard draftError == nil, connectedAddress != nil else { return }
+        if syncing { syncRequested = true; return }
+        syncing = true
+        defer {
+            syncing = false
+            if syncRequested { syncRequested = false; Task { await syncDrafts() } }
+        }
         for draft in drafts where draft.ready {
             do {
                 let photo = try draft.photoFile.map { try DraftStorage.photo($0) }
