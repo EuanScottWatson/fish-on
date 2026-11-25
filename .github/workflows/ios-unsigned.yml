@@ -1,42 +1,39 @@
-name: Build unsigned iPhone app
+name: Build Swift iPhone preview
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  build-ios:
+  build:
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - name: Check case-insensitive filenames
-        run: node tests/check-case-collisions.cjs
-      - name: Install dependencies
-        run: npm ci
-      - name: Generate iOS project
-        run: ./node_modules/.bin/expo prebuild --platform ios --no-install
-      - name: Install iOS dependencies
-        run: pod install --project-directory=ios
-      - name: Build unsigned app for iPhone
+      - name: Test data handling
+        run: swift test --package-path ios-native
+      - name: Install project generator
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate --spec ios-native/project.yml
+      - name: Build simulator app
         run: |
-          xcodebuild -workspace ios/FishOn.xcworkspace -scheme FishOn \
-            -configuration Release -sdk iphoneos \
-            -derivedDataPath "$RUNNER_TEMP/fish-on-build" \
+          xcodebuild -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \
+            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/fish-simulator" CODE_SIGNING_ALLOWED=NO build
+      - name: Build unsigned iPhone app
+        run: |
+          xcodebuild -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \
+            -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/fish-swift" \
             CODE_SIGNING_ALLOWED=NO build
       - name: Package unsigned IPA
         run: |
           mkdir -p "$RUNNER_TEMP/package/Payload"
-          cp -R "$RUNNER_TEMP/fish-on-build/Build/Products/Release-iphoneos/FishOn.app" "$RUNNER_TEMP/package/Payload/"
+          cp -R "$RUNNER_TEMP/fish-swift/Build/Products/Release-iphoneos/FishOnNativePreview.app" "$RUNNER_TEMP/package/Payload/"
           cd "$RUNNER_TEMP/package"
-          zip -qry Fish-On-unsigned.ipa Payload
-      - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
+          zip -qry Fish-On-Swift-preview-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
         with:
-          name: fish-on-unsigned-ios
-          path: ${{ runner.temp }}/package/Fish-On-unsigned.ipa
+          name: fish-on-swift-preview-unsigned-ios
+          path: ${{ runner.temp }}/package/Fish-On-Swift-preview-unsigned.ipa
           if-no-files-found: error
           retention-days: 7
