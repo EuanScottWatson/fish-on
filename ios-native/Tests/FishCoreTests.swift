@@ -17,4 +17,12 @@ final class FishCoreTests: XCTestCase {
         XCTAssertNil(record.number("species"))
         XCTAssertThrowsError(try decodeRecords(Data("{}".utf8)))
     }
+    func testMultipartFieldsAndPhotoRemainIntact() {
+        let photo = Data([0xff, 0xd8, 0x00, 0xff])
+        let result = multipartBody(fields: ["species": "Pike", "id": "abc"], photo: photo, boundary: "test-boundary")
+        XCTAssertNotNil(result.range(of: Data("name=\"species\"\r\n\r\nPike\r\n".utf8)))
+        XCTAssertNotNil(result.range(of: Data("name=\"id\"\r\n\r\nabc\r\n".utf8)))
+        XCTAssertNotNil(result.range(of: photo))
+        XCTAssertTrue(result.suffix(Data("--test-boundary--\r\n".utf8).count).elementsEqual(Data("--test-boundary--\r\n".utf8)))
+    }
 }

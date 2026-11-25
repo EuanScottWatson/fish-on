@@ -39,3 +39,19 @@ public func britishDate(_ value: String) -> String {
           parts.allSatisfy({ $0.allSatisfy(\.isNumber) }) else { return value.isEmpty ? "Date not recorded" : value }
     return "\(parts[2])/\(parts[1])/\(parts[0])"
 }
+
+/// Encode the existing Fish On multipart contract with a stable boundary.
+public func multipartBody(fields: [String: String], photo: Data?, boundary: String) -> Data {
+    var body = Data()
+    func append(_ text: String) { body.append(Data(text.utf8)) }
+    for key in fields.keys.sorted() {
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(key)\"\r\n\r\n\(fields[key] ?? "")\r\n")
+    }
+    if let photo {
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"fish.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n")
+        body.append(photo)
+        append("\r\n")
+    }
+    append("--\(boundary)--\r\n")
+    return body
+}

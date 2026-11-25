@@ -4,12 +4,14 @@ import MapKit
 @main
 struct FishOnApp: App {
     @StateObject private var store = FishStore()
+    @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(store).preferredColorScheme(.dark)
                 .tint(Color(red: 0.79, green: 0.84, blue: 0.53))
                 .environment(\.locale, Locale(identifier: "en_GB"))
                 .task { store.loadDrafts(); store.loadCachedRecords(); await store.refresh(); await store.syncDrafts() }
+                .onChange(of: scenePhase) { phase in if phase == .active { Task { await store.refresh(); await store.syncDrafts() } } }
         }
     }
 }
@@ -32,6 +34,9 @@ final class FishStore: ObservableObject {
     @Published var customAddress = UserDefaults.standard.string(forKey: "server") ?? ""
     private let defaults = ["http://192.168.32.48:7782", "http://100.94.227.14:7782"]
     var addresses: [String] {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["FISH_UI_TEST"] == "1" { return ["http://127.0.0.1:18782"] }
+        #endif
         var result: [String] = []
         for address in [customAddress.trimmingCharacters(in: .whitespacesAndNewlines)] + defaults {
             let cleaned = address.hasSuffix("/") ? String(address.dropLast()) : address
@@ -121,6 +126,8 @@ struct HomeView: View {
                     VStack(alignment: .leading) { Text("\(store.trips.count)").font(.title.bold()); Text("Trips").foregroundStyle(.secondary) }
                 }.padding(.vertical)
                 NavigationLink { StatisticsView() } label: { Label("Your statistics", systemImage: "chart.bar") }
+                NavigationLink { CountriesView() } label: { Label("Countries fished", systemImage: "globe.europe.africa") }
+                NavigationLink { DiscoveryView() } label: { Label("Fish nearby", systemImage: "map") }
                 Text("Recent catches").font(.title2.bold())
                 ForEach(Array(store.catches.prefix(4))) { item in NavigationLink { CatchDetail(item: item) } label: { CatchRow(item: item) }.buttonStyle(.plain) }
 

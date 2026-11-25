@@ -85,7 +85,7 @@ struct PhotoMetadata {
 }
 
 struct CameraPicker: UIViewControllerRepresentable {
-    let onPhoto: (Data) -> Void
+    let onPhoto: (Data, String?) -> Void
     @Environment(\.dismiss) private var dismiss
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIViewController(context: Context) -> UIImagePickerController {
@@ -102,9 +102,12 @@ struct CameraPicker: UIViewControllerRepresentable {
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
             guard let image = info[.originalImage] as? UIImage, let data = image.jpegData(compressionQuality: 0.9) else { parent.dismiss(); return }
             PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-                if status == .authorized || status == .limited { PHPhotoLibrary.shared().performChanges({ PHAssetChangeRequest.creationRequestForAsset(from: image) }) { _, _ in } }
+                if status == .authorized || status == .limited {
+                    PHPhotoLibrary.shared().performChanges({ PHAssetChangeRequest.creationRequestForAsset(from: image) }) { success, error in
+                        DispatchQueue.main.async { self.parent.onPhoto(data, success ? nil : "Could not save to Photos: \(error?.localizedDescription ?? "unknown error")."); self.parent.dismiss() }
+                    }
+                } else { DispatchQueue.main.async { self.parent.onPhoto(data, "Photos access was denied; the image can still be saved in Fish On."); self.parent.dismiss() } }
             }
-            parent.onPhoto(data); parent.dismiss()
         }
     }
 }
@@ -127,13 +130,7 @@ extension FishStore {
     func sendMultipart(path: String, fields: [String: String], photo: Data?, timeout: TimeInterval = 30) async throws -> [String: Any] {
         guard let base = connectedAddress, let url = URL(string: base + path) else { throw URLError(.notConnectedToInternet) }
         let boundary = "FishOn-\(UUID().uuidString)"
-        var body = Data()
-        func append(_ value: String) { body.append(Data(value.utf8)) }
-        for key in fields.keys.sorted() {
-            append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(key)\"\r\n\r\n\(fields[key] ?? "")\r\n")
-        }
-        if let photo { append("--\(boundary)\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"fish.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n"); body.append(photo); append("\r\n") }
-        append("--\(boundary)--\r\n")
+        let body = multipartBody(fields: fields, photo: photo, boundary: boundary)
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = "POST"; request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("similarity-v1", forHTTPHeaderField: "X-FishOn-Identify"); request.httpBody = body

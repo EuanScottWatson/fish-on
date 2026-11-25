@@ -20,6 +20,16 @@ jobs:
           xcodebuild -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \
             -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/fish-simulator" CODE_SIGNING_ALLOWED=NO build
+      - name: Run simulator journal test against disposable data
+        run: |
+          mkdir -p "$RUNNER_TEMP/fish-ui-data"
+          FISH_TEST_DATA="$RUNNER_TEMP/fish-ui-data" python3 ios-native/UITests/server.py > "$RUNNER_TEMP/fish-ui-server.log" 2>&1 &
+          for i in {1..30}; do curl -fsS http://127.0.0.1:18782/health && break; sleep 1; done
+          DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if x["name"].startswith("iPhone")))')
+          xcodebuild test -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/fish-test" \
+            CODE_SIGNING_ALLOWED=NO
+          python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))[0]["species"] == "Test perch"' "$RUNNER_TEMP/fish-ui-data/catches.json"
       - name: Build unsigned iPhone app
         run: |
           xcodebuild -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \

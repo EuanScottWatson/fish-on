@@ -44,8 +44,23 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoads: true
+  FishOnNativeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: FishOnNativePreview
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.fishbook.homelab.nativepreview.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: FishOnNativePreview
 schemes:
   FishOnNativePreview:
     build:
       targets:
         FishOnNativePreview: all
+    test:
+      targets:
+        - FishOnNativeUITests

@@ -74,7 +74,7 @@ struct CatchEditor: View {
             guard let item else { return }
             Task { do { if let data = try await item.loadTransferable(type: Data.self) { applyPhoto(data) } else { message = "Could not read that photo." } } catch { message = "Could not read that photo: \(error.localizedDescription)" } }
         }
-        .sheet(isPresented: $camera) { CameraPicker { data in applyPhoto(data) } }
+        .sheet(isPresented: $camera) { CameraPicker { data, warning in applyPhoto(data); if !hasDate { selectedDate = Date(); hasDate = true }; if draft.lat.isEmpty && draft.lon.isEmpty { location.request() }; if let warning { message = warning } } }
         .sheet(isPresented: $crop) { if let photoData, let image = UIImage(data: photoData) { NavigationStack { CropView(image: image, box: $box) } } }
         .sheet(isPresented: $mapPicker) { NavigationStack { LocationPicker(latitude: $draft.lat, longitude: $draft.lon) } }
     }
