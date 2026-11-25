@@ -163,16 +163,22 @@ struct CatchesView: View {
     @EnvironmentObject private var store: FishStore
     @State private var search = ""
     @State private var editDraft: CatchDraft?
+    @State private var importing = false
+    @State private var draftForDelete: CatchDraft?
+    @State private var draftMessage = ""
     @Environment(\.logCatch) private var logCatch
     var matches: [Record] { store.catches.filter { search.isEmpty || "\($0.string("species")) \($0.string("place"))".localizedCaseInsensitiveContains(search) } }
     var body: some View {
         List {
-            if !store.drafts.isEmpty { Section("Saved on this phone") { ForEach(store.drafts) { draft in Button { editDraft = draft } label: { VStack(alignment: .leading) { Text(draft.species.isEmpty ? "Photo to identify" : draft.species); Text(draft.ready ? "Waiting to sync" : "Review and identify").font(.caption).foregroundStyle(.secondary) } } } } }
+            if !draftMessage.isEmpty { Text(draftMessage).foregroundStyle(.orange) }
+            if !store.drafts.isEmpty { Section("Saved on this phone") { ForEach(store.drafts) { draft in Button { editDraft = draft } label: { VStack(alignment: .leading) { Text(draft.species.isEmpty ? "Photo to identify" : draft.species); Text(draft.ready ? "Waiting to sync" : "Review and identify").font(.caption).foregroundStyle(.secondary) } }.swipeActions { Button("Delete", role: .destructive) { draftForDelete = draft }.disabled(store.syncing) } } } }
             Section("Your catches") { ForEach(matches) { item in NavigationLink { CatchDetail(item: item) } label: { CatchRow(item: item) } } }
         }
             .navigationTitle("Catches").searchable(text: $search).refreshable { await store.refresh(); await store.syncDrafts() }
-            .toolbar { ToolbarItem(placement: .primaryAction) { Button("Log catch") { logCatch() } } }
+            .toolbar { ToolbarItem(placement: .primaryAction) { Menu { Button("Log catch") { logCatch() }; Button("Add multiple photos") { importing = true } } label: { Image(systemName: "plus") }.accessibilityLabel("Add catch") } }
             .sheet(item: $editDraft) { draft in NavigationStack { CatchEditor(draft: draft, editingExisting: true) } }
+            .sheet(isPresented: $importing) { NavigationStack { MultiPhotoImport() } }
+            .confirmationDialog("Remove this offline catch?", isPresented: Binding(get: { draftForDelete != nil }, set: { if !$0 { draftForDelete = nil } })) { Button("Remove draft", role: .destructive) { if let draft = draftForDelete { do { try store.removeDraft(draft) } catch { draftMessage = error.localizedDescription } }; draftForDelete = nil } }
     }
 }
 
@@ -193,7 +199,7 @@ struct CatchDetail: View {
                 if !item.string(key).isEmpty { VStack(alignment: .leading, spacing: 4) { Text(key == "tackle" ? "Bait / tackle" : key.capitalized).font(.caption.weight(.bold)).foregroundStyle(.secondary); Text(item.string(key)) } }
             }
             Button("Edit catch") { editing = true }.buttonStyle(.bordered)
-            Button("Delete catch", role: .destructive) { confirmingDelete = true }
+            Button("Delete catch", role: .destructive) { if store.drafts.contains(where: { $0.id == item.id }) { error = "This catch has an unsynchronised draft. Sync or remove the draft before deleting the server copy." } else { confirmingDelete = true } }
             if !error.isEmpty { Text(error).foregroundStyle(.orange) }
         }.frame(maxWidth: .infinity, alignment: .leading).padding() }.navigationTitle(item.string("species")).navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $editing) { NavigationStack { CatchEditor(draft: CatchDraft(item), editingExisting: true) } }
@@ -277,7 +283,7 @@ struct TripDetail: View {
             if !item.string(key).isEmpty { LabeledContent(key.replacingOccurrences(of: "_", with: " ").capitalized, value: key.contains("date") ? britishDate(item.string(key)) : item.string(key)) }
         }
             Section("Catches") { ForEach(store.catches.filter { item.strings("catch_ids").contains($0.id) }) { catchItem in NavigationLink { CatchDetail(item: catchItem) } label: { CatchRow(item: catchItem) } } }
-            TripPhotoPicker(trip: item)
+            TripPhotoPicker(trip: store.trips.first { $0.id == item.id } ?? item)
             Section { Button("Edit trip") { editing = true }; Button("Delete trip", role: .destructive) { deleting = true }; if !message.isEmpty { Text(message).foregroundStyle(.orange) } }
         }.navigationTitle(item.string("place").isEmpty ? "Fishing trip" : item.string("place"))
             .sheet(isPresented: $editing) { NavigationStack { TripEditor(item: item) } }

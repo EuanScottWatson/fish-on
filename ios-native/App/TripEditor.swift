@@ -103,24 +103,38 @@ struct TripPhotoPicker: View {
     @State private var photo: PhotosPickerItem?
     @State private var message = ""
     @State private var busy = false
+    @State private var pending: (id: String, data: Data)?
+    @State private var deleting: String?
     var photos: [[String: String]] { trip.values["photos"] as? [[String: String]] ?? [] }
     var body: some View {
         Section("Trip photos") {
             ForEach(photos, id: \.self) { photo in
-                if let base = store.connectedAddress, let path = photo["url"], let url = URL(string: base + path) { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() } }
+                if let base = store.connectedAddress, let path = photo["url"], let url = URL(string: base + path) { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }; if let id = photo["id"] { Button("Remove photo", role: .destructive) { deleting = id } } }
             }
             PhotosPicker(selection: $photo, matching: .images) { Text(busy ? "Uploading…" : "Add a trip photo") }.disabled(busy)
+            if pending != nil { Button("Retry photo upload") { Task { await upload() } }.disabled(busy) }
             if !message.isEmpty { Text(message).foregroundStyle(.orange) }
-        }.onChange(of: photo) { item in
+        }.confirmationDialog("Remove this trip photo?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) { Button("Remove photo", role: .destructive) { if let id = deleting { Task { do { try await store.delete(path: "/api/trips/\(trip.id)/photos/\(id)"); await store.refresh() } catch { message = error.localizedDescription }; deleting = nil } } } }.onChange(of: photo) { item in
             guard let item else { return }
             Task {
                 busy = true; defer { busy = false }
                 do {
                     guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data), let jpeg = image.normalisedJPEG() else { throw FishError.message("Could not read the photo.") }
-                    _ = try await store.sendMultipart(path: "/api/trips/\(trip.id)/photos", fields: ["photo_id": UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()], photo: jpeg)
-                    await store.refresh(); message = "Photo uploaded. Reopen the trip to refresh."
+                    pending = (UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(), jpeg)
+                    busy = false
+                    await upload()
+                    busy = true
                 } catch { message = error.localizedDescription }
             }
         }
     }
+    func upload() async {
+        guard !busy, let pending else { return }
+        busy = true; defer { busy = false }
+        do {
+            _ = try await store.sendMultipart(path: "/api/trips/\(trip.id)/photos", fields: ["photo_id": pending.id], photo: pending.data)
+            self.pending = nil; await store.refresh(); message = "Photo uploaded."
+        } catch { message = "Photo not uploaded: \(error.localizedDescription). You can retry." }
+    }
+
 }
