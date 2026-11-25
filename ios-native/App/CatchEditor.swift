@@ -123,7 +123,10 @@ struct CatchEditor: View {
             suggestions = result["suggestions"] as? [[String: Any]] ?? []
             scoreType = result["score_type"] as? String ?? "probability"
             message = suggestions.isEmpty ? "No suggestions found. Adjust the box and try again." : (scoreType == "similarity" ? "Choose a suggestion. Match scores are not probabilities." : "Choose a suggestion after checking it.")
-        } catch { message = "Identification unavailable: \(error.localizedDescription). You can save the photo and review it later." }
+        } catch {
+            let detail = error.localizedDescription
+            message = detail.contains("429") ? "The identification service is busy. Save the photo and try again later." : "Identification unavailable: \(detail). You can save the photo and review it later."
+        }
     }
 }
 

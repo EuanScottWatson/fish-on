@@ -254,7 +254,9 @@ struct FishDetail: View {
             Section { if let photo = store.guidePhoto(item) { AsyncImage(url: photo.url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }; Text(photo.credit).font(.caption).foregroundStyle(.secondary) }; Text(item.string("name")).italic(); if !item.string("biology").isEmpty { Text(item.string("biology")) } }
             if let tip = fishingTip(item.string("name")) { Section("Fishing") { Text(tip) } }
             Section("Where it has been recorded") { SpeciesRangeView(name: item.string("name")) }
-            Section("Habitat") { Text([item.flag("fresh") ? "Freshwater" : "", item.flag("salt") ? "Marine" : "", item.flag("brack") ? "Brackish" : ""].filter { !$0.isEmpty }.joined(separator: ", ")) }
+            Section("Habitat") { Text([item.flag("fresh") ? "Freshwater" : "", item.flag("salt") ? "Marine" : "", item.flag("brack") ? "Brackish" : ""].filter { !$0.isEmpty }.joined(separator: ", ")); if !item.strings("habitats").isEmpty { Text(item.strings("habitats").joined(separator: ", ")) }; if let length = item.number("length"), length > 0 { LabeledContent("Maximum length", value: "\(length.formatted()) cm") } }
+            if !item.strings("food").isEmpty { Section("Food records") { Text(item.strings("food").joined(separator: ", ")) } }
+            if let encoded = item.string("name").replacingOccurrences(of: " ", with: "-").addingPercentEncoding(withAllowedCharacters: .urlPathAllowed), let url = URL(string: "https://www.fishbase.se/summary/" + encoded + ".html") { Link("Open FishBase profile", destination: url) }
             if !item.strings("countries").isEmpty { Section("Recorded countries") { Text(item.strings("countries").joined(separator: ", ")) } }
             Section { Text("FishBase, Froese & Pauly (eds.), 06/2026, CC BY-NC 4.0. Records do not guarantee current presence.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle(item.string("common").isEmpty ? item.string("name") : item.string("common"))
