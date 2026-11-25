@@ -9,7 +9,7 @@ struct FishOnApp: App {
             RootView().environmentObject(store).preferredColorScheme(.dark)
                 .tint(Color(red: 0.79, green: 0.84, blue: 0.53))
                 .environment(\.locale, Locale(identifier: "en_GB"))
-                .task { await store.refresh() }
+                .task { store.loadDrafts(); await store.refresh(); await store.syncDrafts() }
         }
     }
 }
@@ -17,6 +17,10 @@ struct FishOnApp: App {
 @MainActor
 final class FishStore: ObservableObject {
     @Published var catches: [Record] = []
+    @Published var drafts: [CatchDraft] = []
+    @Published var draftError: String?
+    @Published var syncError: String?
+    @Published var syncing = false
     @Published var trips: [Record] = []
     @Published var fish: [Record] = []
     @Published var connectedAddress: String?
@@ -79,6 +83,7 @@ final class FishStore: ObservableObject {
 struct RootView: View {
     @EnvironmentObject private var store: FishStore
     @State private var settings = false
+    @State private var logging = false
     var body: some View {
         TabView {
             NavigationStack { HomeView().toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button { settings = true } label: { Image(systemName: "gearshape") }.accessibilityLabel("Connection settings") } } }.tabItem { Label("Home", systemImage: "house") }
@@ -88,17 +93,22 @@ struct RootView: View {
             NavigationStack { CatchMapView() }.tabItem { Label("Map", systemImage: "map") }
         }
         .sheet(isPresented: $settings) { NavigationStack { ConnectionView() } }
+        .sheet(isPresented: $logging) { NavigationStack { CatchEditor(draft: CatchDraft(), editingExisting: false) } }
+        .environment(\.logCatch, { logging = true })
     }
 }
 
 struct HomeView: View {
     @EnvironmentObject private var store: FishStore
+    @Environment(\.logCatch) private var logCatch
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("FISH ON · NATIVE PREVIEW").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.secondary)
                 Text("You should've seen the one that got away!").font(.largeTitle.bold())
                 Text("Your fishing journal, close at hand.").foregroundStyle(.secondary)
+                Button("Log a catch") { logCatch() }.buttonStyle(.borderedProminent)
+                if let error = store.draftError ?? store.syncError { Text(error).foregroundStyle(.orange) }
                 if let error = store.error { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.orange) }
                 else if let address = store.connectedAddress { Label("Connected · \(address)", systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.secondary) }
                 HStack(spacing: 28) {
@@ -107,7 +117,7 @@ struct HomeView: View {
                 }.padding(.vertical)
                 Text("Recent catches").font(.title2.bold())
                 ForEach(Array(store.catches.prefix(4))) { item in NavigationLink { CatchDetail(item: item) } label: { CatchRow(item: item) }.buttonStyle(.plain) }
-                Text("This preview is read-only. Keep using the existing Fish On app to log catches, including offline drafts.").font(.footnote).foregroundStyle(.secondary)
+
             }.padding()
         }.navigationTitle("Fish On").refreshable { await store.refresh() }
     }
@@ -131,16 +141,27 @@ struct CatchRow: View {
 struct CatchesView: View {
     @EnvironmentObject private var store: FishStore
     @State private var search = ""
+    @State private var editDraft: CatchDraft?
+    @Environment(\.logCatch) private var logCatch
     var matches: [Record] { store.catches.filter { search.isEmpty || "\($0.string("species")) \($0.string("place"))".localizedCaseInsensitiveContains(search) } }
     var body: some View {
-        List(matches) { item in NavigationLink { CatchDetail(item: item) } label: { CatchRow(item: item) } }
-            .navigationTitle("Catches").searchable(text: $search).refreshable { await store.refresh() }
+        List {
+            if !store.drafts.isEmpty { Section("Saved on this phone") { ForEach(store.drafts) { draft in Button { editDraft = draft } label: { VStack(alignment: .leading) { Text(draft.species.isEmpty ? "Photo to identify" : draft.species); Text(draft.ready ? "Waiting to sync" : "Review and identify").font(.caption).foregroundStyle(.secondary) } } } } }
+            Section("Your catches") { ForEach(matches) { item in NavigationLink { CatchDetail(item: item) } label: { CatchRow(item: item) } } }
+        }
+            .navigationTitle("Catches").searchable(text: $search).refreshable { await store.refresh(); await store.syncDrafts() }
+            .toolbar { ToolbarItem(placement: .primaryAction) { Button("Log catch") { logCatch() } } }
+            .sheet(item: $editDraft) { draft in NavigationStack { CatchEditor(draft: draft, editingExisting: true) } }
     }
 }
 
 struct CatchDetail: View {
     @EnvironmentObject private var store: FishStore
     let item: Record
+    @State private var editing = false
+    @State private var confirmingDelete = false
+    @State private var error = ""
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
             if let url = store.photoURL(item.string("photo")) { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().frame(maxWidth: .infinity, minHeight: 160) } }
@@ -149,7 +170,12 @@ struct CatchDetail: View {
             ForEach(["weight", "length", "tackle", "notes"], id: \.self) { key in
                 if !item.string(key).isEmpty { VStack(alignment: .leading, spacing: 4) { Text(key == "tackle" ? "Bait / tackle" : key.capitalized).font(.caption.weight(.bold)).foregroundStyle(.secondary); Text(item.string(key)) } }
             }
+            Button("Edit catch") { editing = true }.buttonStyle(.bordered)
+            Button("Delete catch", role: .destructive) { confirmingDelete = true }
+            if !error.isEmpty { Text(error).foregroundStyle(.orange) }
         }.frame(maxWidth: .infinity, alignment: .leading).padding() }.navigationTitle(item.string("species")).navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $editing) { NavigationStack { CatchEditor(draft: CatchDraft(item), editingExisting: true) } }
+            .confirmationDialog("Delete this catch and its photo?", isPresented: $confirmingDelete) { Button("Delete", role: .destructive) { Task { do { try await store.delete(path: "/api/catches/" + item.id); await store.refresh(); dismiss() } catch { self.error = error.localizedDescription } } } }
     }
 }
 
@@ -222,3 +248,6 @@ struct ConnectionView: View {
         }.navigationTitle("Connection").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }
 }
+
+private struct LogCatchKey: EnvironmentKey { static let defaultValue: () -> Void = {} }
+extension EnvironmentValues { var logCatch: () -> Void { get { self[LogCatchKey.self] } set { self[LogCatchKey.self] = newValue } } }
