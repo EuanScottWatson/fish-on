@@ -35,7 +35,11 @@ enum DraftStorage {
     static var directory: URL {
         get throws {
             let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            let folder = base.appendingPathComponent("FishOnDrafts", isDirectory: true)
+            var name = "FishOnDrafts"
+            #if DEBUG
+            if let test = ProcessInfo.processInfo.environment["FISH_UI_TEST"], ["1", "offline"].contains(test) { name += "-UITest-" + test }
+            #endif
+            let folder = base.appendingPathComponent(name, isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             return folder
         }
