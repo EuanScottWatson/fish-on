@@ -37,5 +37,10 @@ final class FishOnUITests: XCTestCase {
         app.tabBars.buttons["Catches"].tap()
         XCTAssertTrue(app.staticTexts["Offline roach"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Waiting to sync"].exists)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Catches"].waitForExistence(timeout: 15))
+        app.tabBars.buttons["Catches"].tap()
+        XCTAssertTrue(app.staticTexts["Offline roach"].waitForExistence(timeout: 15))
     }
 }
