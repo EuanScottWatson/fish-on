@@ -20,9 +20,17 @@ struct StatisticsView: View {
             }
             Section("Most caught") { ForEach(speciesCounts.prefix(10), id: \.0) { name, count in LabeledContent(name, value: "\(count)") } }
             Section("Fishing places") { ForEach(placeCounts.prefix(10), id: \.0) { name, count in LabeledContent(name, value: "\(count)") } }
+            Section("Catches by month") { ForEach(monthCounts(), id: \.0) { month, count in LabeledContent(month, value: "\(count)") } }
             Section("Catches by year") { ForEach(counts(store.catches.compactMap { value in let date = value.string("date"); return date.count >= 10 ? String(date.prefix(4)) : nil }), id: \.0) { year, count in LabeledContent(year, value: "\(count)") } }
             Section { Text("Counts reflect saved records only. Trips are counted whether or not a catch was linked.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("Statistics")
+    }
+    func monthCounts() -> [(String, Int)] {
+        let symbols = Calendar(identifier: .gregorian).monthSymbols
+        return symbols.enumerated().map { index, label in
+            let month = String(format: "-%02d-", index + 1)
+            return (label, store.catches.filter { $0.string("date").count == 10 && $0.string("date").contains(month) }.count)
+        }
     }
     func personalBests() -> [Record] {
         var best: [String: (Double, Record)] = [:]

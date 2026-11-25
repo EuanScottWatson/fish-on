@@ -69,3 +69,13 @@ func fishingTip(_ name: String) -> String? {
     guard let url = Bundle.main.url(forResource: "fishing-tips", withExtension: "json"), let data = try? Data(contentsOf: url), let tips = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
     return tips[name]
 }
+
+func lookupLicensedPhoto(scientificName: String) async throws -> LicensedPhoto? {
+    var components = URLComponents(string: "https://api.inaturalist.org/v1/taxa")!
+    components.queryItems = [URLQueryItem(name: "q", value: scientificName), URLQueryItem(name: "rank", value: "species"), URLQueryItem(name: "per_page", value: "10")]
+    guard let url = components.url else { throw URLError(.badURL) }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    guard (response as? HTTPURLResponse)?.statusCode == 200, let result = try JSONSerialization.jsonObject(with: data) as? [String: Any], let taxa = result["results"] as? [[String: Any]] else { throw URLError(.badServerResponse) }
+    guard let match = taxa.first(where: { ($0["name"] as? String)?.caseInsensitiveCompare(scientificName) == .orderedSame }) else { return nil }
+    return LicensedPhoto(match["default_photo"])
+}

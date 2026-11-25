@@ -185,6 +185,7 @@ struct CatchesView: View {
 struct CatchDetail: View {
     @EnvironmentObject private var store: FishStore
     let item: Record
+    var current: Record { store.catches.first { $0.id == item.id } ?? item }
     @State private var editing = false
     @State private var confirmingDelete = false
     @State private var gallery = false
@@ -192,19 +193,19 @@ struct CatchDetail: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
-            if let url = store.photoURL(item.string("photo")) { Button { gallery = true } label: { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().frame(maxWidth: .infinity, minHeight: 160) } }.accessibilityLabel("View full photo") }
-            Text(item.string("scientific")).italic().foregroundStyle(.secondary)
-            Text("\(item.string("place")) · \(britishDate(item.string("date")))")
+            if let url = store.photoURL(current.string("photo")) { Button { gallery = true } label: { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().frame(maxWidth: .infinity, minHeight: 160) } }.accessibilityLabel("View full photo") }
+            Text(current.string("scientific")).italic().foregroundStyle(.secondary)
+            Text("\(current.string("place")) · \(britishDate(current.string("date")))")
             ForEach(["weight", "length", "tackle", "notes"], id: \.self) { key in
-                if !item.string(key).isEmpty { VStack(alignment: .leading, spacing: 4) { Text(key == "tackle" ? "Bait / tackle" : key.capitalized).font(.caption.weight(.bold)).foregroundStyle(.secondary); Text(item.string(key)) } }
+                if !current.string(key).isEmpty { VStack(alignment: .leading, spacing: 4) { Text(key == "tackle" ? "Bait / tackle" : key.capitalized).font(.caption.weight(.bold)).foregroundStyle(.secondary); Text(current.string(key)) } }
             }
             Button("Edit catch") { editing = true }.buttonStyle(.bordered)
-            Button("Delete catch", role: .destructive) { if store.drafts.contains(where: { $0.id == item.id }) { error = "This catch has an unsynchronised draft. Sync or remove the draft before deleting the server copy." } else { confirmingDelete = true } }
+            Button("Delete catch", role: .destructive) { if store.drafts.contains(where: { $0.id == current.id }) { error = "This catch has an unsynchronised draft. Sync or remove the draft before deleting the server copy." } else { confirmingDelete = true } }
             if !error.isEmpty { Text(error).foregroundStyle(.orange) }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding() }.navigationTitle(item.string("species")).navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $editing) { NavigationStack { CatchEditor(draft: CatchDraft(item), editingExisting: true) } }
-            .fullScreenCover(isPresented: $gallery) { PhotoGallery(selectedID: item.id) }
-            .confirmationDialog("Delete this catch and its photo?", isPresented: $confirmingDelete) { Button("Delete", role: .destructive) { Task { do { try await store.delete(path: "/api/catches/" + item.id); await store.refresh(); dismiss() } catch { self.error = error.localizedDescription } } } }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding() }.navigationTitle(current.string("species")).navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $editing) { NavigationStack { CatchEditor(draft: CatchDraft(current), editingExisting: true) } }
+            .fullScreenCover(isPresented: $gallery) { PhotoGallery(selectedID: current.id) }
+            .confirmationDialog("Delete this catch and its photo?", isPresented: $confirmingDelete) { Button("Delete", role: .destructive) { Task { do { try await store.delete(path: "/api/catches/" + current.id); await store.refresh(); dismiss() } catch { self.error = error.localizedDescription } } } }
     }
 }
 
@@ -248,10 +249,13 @@ struct GuideView: View {
 
 struct FishDetail: View {
     @EnvironmentObject private var store: FishStore
+    @State private var foundPhoto: LicensedPhoto?
+    @State private var photoError = ""
     let item: Record
     var body: some View {
         List {
-            Section { if let photo = store.guidePhoto(item) { AsyncImage(url: photo.url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }; Text(photo.credit).font(.caption).foregroundStyle(.secondary) }; Text(item.string("name")).italic(); if !item.string("biology").isEmpty { Text(item.string("biology")) } }
+            Section { if let photo = store.guidePhoto(item) ?? foundPhoto { AsyncImage(url: photo.url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }; Text(photo.credit).font(.caption).foregroundStyle(.secondary) }; Text(item.string("name")).italic(); if !item.string("biology").isEmpty { Text(item.string("biology")) } }
+            if !photoError.isEmpty { Text(photoError).font(.footnote).foregroundStyle(.secondary) }
             if let tip = fishingTip(item.string("name")) { Section("Fishing") { Text(tip) } }
             Section("Where it has been recorded") { SpeciesRangeView(name: item.string("name")) }
             Section("Habitat") { Text([item.flag("fresh") ? "Freshwater" : "", item.flag("salt") ? "Marine" : "", item.flag("brack") ? "Brackish" : ""].filter { !$0.isEmpty }.joined(separator: ", ")); if !item.strings("habitats").isEmpty { Text(item.strings("habitats").joined(separator: ", ")) }; if let length = item.number("length"), length > 0 { LabeledContent("Maximum length", value: "\(length.formatted()) cm") } }
@@ -260,6 +264,7 @@ struct FishDetail: View {
             if !item.strings("countries").isEmpty { Section("Recorded countries") { Text(item.strings("countries").joined(separator: ", ")) } }
             Section { Text("FishBase, Froese & Pauly (eds.), 06/2026, CC BY-NC 4.0. Records do not guarantee current presence.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle(item.string("common").isEmpty ? item.string("name") : item.string("common"))
+            .task { if store.guidePhoto(item) == nil { do { foundPhoto = try await lookupLicensedPhoto(scientificName: item.string("name")) } catch { photoError = "Photo lookup unavailable." } } }
     }
 }
 
@@ -280,16 +285,17 @@ struct TripDetail: View {
     @State private var deleting = false
     @State private var message = ""
     let item: Record
+    var current: Record { store.trips.first { $0.id == item.id } ?? item }
     var body: some View {
         List { ForEach(["date", "end_date", "start_time", "end_time", "method", "bait", "target_species", "weather", "notes"], id: \.self) { key in
-            if !item.string(key).isEmpty { LabeledContent(key.replacingOccurrences(of: "_", with: " ").capitalized, value: key.contains("date") ? britishDate(item.string(key)) : item.string(key)) }
+            if !current.string(key).isEmpty { LabeledContent(key.replacingOccurrences(of: "_", with: " ").capitalized, value: key.contains("date") ? britishDate(current.string(key)) : current.string(key)) }
         }
-            Section("Catches") { ForEach(store.catches.filter { item.strings("catch_ids").contains($0.id) }) { catchItem in NavigationLink { CatchDetail(item: catchItem) } label: { CatchRow(item: catchItem) } } }
+            Section("Catches") { ForEach(store.catches.filter { current.strings("catch_ids").contains($0.id) }) { catchItem in NavigationLink { CatchDetail(item: catchItem) } label: { CatchRow(item: catchItem) } } }
             TripPhotoPicker(trip: store.trips.first { $0.id == item.id } ?? item)
             Section { Button("Edit trip") { editing = true }; Button("Delete trip", role: .destructive) { deleting = true }; if !message.isEmpty { Text(message).foregroundStyle(.orange) } }
-        }.navigationTitle(item.string("place").isEmpty ? "Fishing trip" : item.string("place"))
-            .sheet(isPresented: $editing) { NavigationStack { TripEditor(item: item) } }
-            .confirmationDialog("Delete this trip? Catches will be kept.", isPresented: $deleting) { Button("Delete trip", role: .destructive) { Task { do { try await store.delete(path: "/api/trips/" + item.id); await store.refresh(); dismiss() } catch { message = error.localizedDescription } } } }
+        }.navigationTitle(current.string("place").isEmpty ? "Fishing trip" : current.string("place"))
+            .sheet(isPresented: $editing) { NavigationStack { TripEditor(item: current) } }
+            .confirmationDialog("Delete this trip? Catches will be kept.", isPresented: $deleting) { Button("Delete trip", role: .destructive) { Task { do { try await store.delete(path: "/api/trips/" + current.id); await store.refresh(); dismiss() } catch { message = error.localizedDescription } } } }
     }
 }
 struct CatchMapView: View {
