@@ -69,7 +69,10 @@ final class FishOnUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "reached its limit")).firstMatch.waitForExistence(timeout: 20))
         XCTAssertTrue(app.descendants(matching: .any)["fish-selection-box"].exists)
         XCTAssertTrue(app.buttons["Draw or adjust fish box"].exists)
-        XCTAssertTrue(app.buttons["Save catch"].exists)
+        let save = app.buttons["Save catch"]
+        for _ in 0..<6 where !save.exists { app.swipeUp() }
+        XCTAssertTrue(save.exists)
+        XCTAssertTrue(save.isEnabled)
     }
     func testManualBoxRemainsAvailableWhenDetectionFails() {
         let app = XCUIApplication()
