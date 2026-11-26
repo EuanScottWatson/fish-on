@@ -1,4 +1,4 @@
-name: FishOnNativePreview
+name: FishOnSwift
 options:
   deploymentTarget:
     iOS: '16.0'
@@ -7,7 +7,7 @@ settings:
     SWIFT_VERSION: '5.0'
     IPHONEOS_DEPLOYMENT_TARGET: '16.0'
 targets:
-  FishOnNativePreview:
+  FishOnSwift:
     type: application
     platform: iOS
     sources:
@@ -15,14 +15,14 @@ targets:
       - path: Sources/FishCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: uk.fishbook.homelab.nativepreview
-        PRODUCT_NAME: FishOnNativePreview
+        PRODUCT_BUNDLE_IDENTIFIER: uk.fishbook.homelab
+        PRODUCT_NAME: FishOnSwift
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: '1,2'
-        CURRENT_PROJECT_VERSION: '1'
-        MARKETING_VERSION: '0.1.0'
-        INFOPLIST_KEY_CFBundleDisplayName: Fish On Preview
+        CURRENT_PROJECT_VERSION: '2'
+        MARKETING_VERSION: '1.1.0'
+        INFOPLIST_KEY_CFBundleDisplayName: Fish On
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Fish On connects to your home server to show your fishing journal.
     info:
       path: App/Info.plist
@@ -31,7 +31,7 @@ targets:
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleName: $(PRODUCT_NAME)
         CFBundlePackageType: APPL
-        CFBundleDisplayName: Fish On Preview
+        CFBundleDisplayName: Fish On
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSRequiresIPhoneOS: true
@@ -50,17 +50,17 @@ targets:
     sources:
       - path: UITests
     dependencies:
-      - target: FishOnNativePreview
+      - target: FishOnSwift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: uk.fishbook.homelab.nativepreview.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: uk.fishbook.homelab.uitests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_TARGET_NAME: FishOnNativePreview
+        TEST_TARGET_NAME: FishOnSwift
 schemes:
-  FishOnNativePreview:
+  FishOnSwift:
     build:
       targets:
-        FishOnNativePreview: all
+        FishOnSwift: all
     test:
       targets:
         - FishOnNativeUITests

@@ -118,7 +118,7 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("FISH ON · NATIVE PREVIEW").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.secondary)
+                Text("FISH ON · YOUR JOURNAL").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.secondary)
                 Text(quotes[max(0, quoteIndex) % quotes.count]).font(.largeTitle.bold())
                 Text("Your fishing journal, close at hand.").foregroundStyle(.secondary)
                 Button("Log a catch") { logCatch() }.buttonStyle(.borderedProminent)

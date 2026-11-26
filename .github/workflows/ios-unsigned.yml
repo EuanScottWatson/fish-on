@@ -1,4 +1,4 @@
-name: Build Swift iPhone preview
+name: Build Swift iPhone app
 on:
   workflow_dispatch:
 permissions:
@@ -17,7 +17,7 @@ jobs:
         run: xcodegen generate --spec ios-native/project.yml
       - name: Build simulator app
         run: |
-          xcodebuild -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \
+          xcodebuild -project ios-native/FishOnSwift.xcodeproj -scheme FishOnSwift \
             -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/fish-simulator" CODE_SIGNING_ALLOWED=NO build
       - name: Run simulator journal test against disposable data
@@ -26,24 +26,24 @@ jobs:
           FISH_TEST_DATA="$RUNNER_TEMP/fish-ui-data" python3 ios-native/UITests/server.py > "$RUNNER_TEMP/fish-ui-server.log" 2>&1 &
           for i in {1..30}; do curl -fsS http://127.0.0.1:18782/health && break; sleep 1; done
           DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if x["name"].startswith("iPhone")))')
-          xcodebuild test -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \
+          xcodebuild test -project ios-native/FishOnSwift.xcodeproj -scheme FishOnSwift \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/fish-test" \
             CODE_SIGNING_ALLOWED=NO
           python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))[0]["species"] == "Test perch"' "$RUNNER_TEMP/fish-ui-data/catches.json"
       - name: Build unsigned iPhone app
         run: |
-          xcodebuild -project ios-native/FishOnNativePreview.xcodeproj -scheme FishOnNativePreview \
+          xcodebuild -project ios-native/FishOnSwift.xcodeproj -scheme FishOnSwift \
             -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/fish-swift" \
             CODE_SIGNING_ALLOWED=NO build
       - name: Package unsigned IPA
         run: |
           mkdir -p "$RUNNER_TEMP/package/Payload"
-          cp -R "$RUNNER_TEMP/fish-swift/Build/Products/Release-iphoneos/FishOnNativePreview.app" "$RUNNER_TEMP/package/Payload/"
+          cp -R "$RUNNER_TEMP/fish-swift/Build/Products/Release-iphoneos/FishOnSwift.app" "$RUNNER_TEMP/package/Payload/"
           cd "$RUNNER_TEMP/package"
-          zip -qry Fish-On-Swift-preview-unsigned.ipa Payload
+          zip -qry Fish-On-Swift-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: fish-on-swift-preview-unsigned-ios
-          path: ${{ runner.temp }}/package/Fish-On-Swift-preview-unsigned.ipa
+          name: fish-on-swift-unsigned-ios
+          path: ${{ runner.temp }}/package/Fish-On-Swift-unsigned.ipa
           if-no-files-found: error
           retention-days: 7

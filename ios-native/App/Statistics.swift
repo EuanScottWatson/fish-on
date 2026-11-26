@@ -26,7 +26,7 @@ struct StatisticsView: View {
         }.navigationTitle("Statistics")
     }
     func monthCounts() -> [(String, Int)] {
-        let symbols = Calendar(identifier: .gregorian).monthSymbols
+        let symbols = britishMonthNames()
         return symbols.enumerated().map { index, label in
             let month = String(format: "-%02d-", index + 1)
             return (label, store.catches.filter { $0.string("date").count == 10 && $0.string("date").contains(month) }.count)

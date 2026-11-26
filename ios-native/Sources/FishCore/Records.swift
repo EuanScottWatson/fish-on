@@ -73,3 +73,20 @@ public func weightInGrams(_ value: String) -> Double? {
     }
     return nil
 }
+
+/// Return British English month names independently of the device's calendar locale.
+public func britishMonthNames() -> [String] {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_GB")
+    formatter.calendar = Calendar(identifier: .gregorian)
+    return formatter.monthSymbols
+}
+
+/// Select a stable snapshot of records within map bounds.
+public func recordsInArea(_ records: [Record], latitude: Double, longitude: Double, latitudeSpan: Double, longitudeSpan: Double, limit: Int) -> [Record] {
+    guard latitudeSpan > 0, longitudeSpan > 0, limit > 0 else { return [] }
+    return Array(records.lazy.filter { item in
+        guard let lat = item.number("lat"), let lon = item.number("lon") else { return false }
+        return abs(lat - latitude) < latitudeSpan / 2 && abs(lon - longitude) < longitudeSpan / 2
+    }.prefix(limit))
+}
