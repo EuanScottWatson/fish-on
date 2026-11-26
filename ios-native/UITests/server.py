@@ -22,6 +22,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.reply({"ok": True})
         elif self.path == "/api/catches":
             self.reply(json.loads(path.read_text()) if path.exists() else [])
+        elif self.path == "/surveys.json":
+            self.reply([{"lat": 53.0, "lon": -2.0, "name": "Test survey", "water": "Test river", "latest": 2025, "species": {"Perch": 2025}}])
         elif self.path in ("/api/trips", "/fishbase.json"):
             self.reply([])
         elif self.path == "/guide-images.json":

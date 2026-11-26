@@ -6,7 +6,7 @@ struct DiscoveryView: View {
     @State private var surveys: [Record] = []
     @State private var surveyResults: [Record] = []
     @State private var observations: [Record] = []
-    @State private var region = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 53, longitude: -2), span: MKCoordinateSpan(latitudeDelta: 4, longitudeDelta: 4))
+    @State private var region = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 53, longitude: -2), span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2))
     @State private var mode = "Surveys"
     @State private var message = "Press Search this area to find records."
     @State private var searching = false

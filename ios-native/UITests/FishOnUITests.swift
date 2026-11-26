@@ -43,4 +43,18 @@ final class FishOnUITests: XCTestCase {
         app.tabBars.buttons["Catches"].tap()
         XCTAssertTrue(app.staticTexts["Offline roach"].waitForExistence(timeout: 15))
     }
+    func testSurveysAppearOnlyAfterSearch() {
+        let app = XCUIApplication()
+        app.launchEnvironment["FISH_UI_TEST"] = "1"
+        app.launch()
+        let nearby = app.buttons["Fish nearby"]
+        XCTAssertTrue(nearby.waitForExistence(timeout: 30))
+        for _ in 0..<4 where !nearby.isHittable { app.swipeUp() }
+        nearby.tap()
+        let search = app.buttons["Search this area"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Showing 1 surveys in the searched area. Historic records do not imply fishing access. © Environment Agency."].exists)
+        search.tap()
+        XCTAssertTrue(app.staticTexts["Showing 1 surveys in the searched area. Historic records do not imply fishing access. © Environment Agency."].waitForExistence(timeout: 20))
+    }
 }
