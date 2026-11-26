@@ -1,49 +1,33 @@
-name: Build Swift iPhone app
+name: Evaluate fish identification models
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  build:
-    runs-on: macos-latest
-    timeout-minutes: 45
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Test data handling
-        run: swift test --package-path ios-native
-      - name: Install project generator
-        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
-      - name: Generate Xcode project
-        run: xcodegen generate --spec ios-native/project.yml
-      - name: Build simulator app
-        run: |
-          xcodebuild -project ios-native/FishOnSwift.xcodeproj -scheme FishOnSwift \
-            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/fish-simulator" CODE_SIGNING_ALLOWED=NO build
-      - name: Run simulator journal test against disposable data
-        run: |
-          mkdir -p "$RUNNER_TEMP/fish-ui-data"
-          FISH_TEST_DATA="$RUNNER_TEMP/fish-ui-data" python3 ios-native/UITests/server.py > "$RUNNER_TEMP/fish-ui-server.log" 2>&1 &
-          for i in {1..30}; do curl -fsS http://127.0.0.1:18782/health && break; sleep 1; done
-          DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if x["name"].startswith("iPhone")))')
-          xcodebuild test -project ios-native/FishOnSwift.xcodeproj -scheme FishOnSwift \
-            -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/fish-test" \
-            CODE_SIGNING_ALLOWED=NO
-          python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))[0]["species"] == "Test perch"' "$RUNNER_TEMP/fish-ui-data/catches.json"
-      - name: Build unsigned iPhone app
-        run: |
-          xcodebuild -project ios-native/FishOnSwift.xcodeproj -scheme FishOnSwift \
-            -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/fish-swift" \
-            CODE_SIGNING_ALLOWED=NO build
-      - name: Package unsigned IPA
-        run: |
-          mkdir -p "$RUNNER_TEMP/package/Payload"
-          cp -R "$RUNNER_TEMP/fish-swift/Build/Products/Release-iphoneos/FishOnSwift.app" "$RUNNER_TEMP/package/Payload/"
-          cd "$RUNNER_TEMP/package"
-          zip -qry Fish-On-Swift-unsigned.ipa Payload
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-python@v5
         with:
-          name: fish-on-swift-unsigned-ios
-          path: ${{ runner.temp }}/package/Fish-On-Swift-unsigned.ipa
-          if-no-files-found: error
+          python-version: '3.11'
+      - name: Install CPU-only inference dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install 'open_clip_torch==2.32.0' 'numpy<2' Pillow
+      - name: Evaluate Fishial on public reference photos
+        run: python -u evaluation/benchmark.py fishial | tee "$RUNNER_TEMP/fishial-results.txt"
+      - name: Evaluate BioCLIP 2 on the same photos
+        run: python -u evaluation/benchmark.py bioclip | tee "$RUNNER_TEMP/bioclip-results.txt"
+      - name: Upload results only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fish-identification-evaluation
+          path: |
+            ${{ runner.temp }}/fishial-results.txt
+            ${{ runner.temp }}/bioclip-results.txt
+          if-no-files-found: warn
           retention-days: 7
