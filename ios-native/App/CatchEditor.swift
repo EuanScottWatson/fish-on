@@ -18,6 +18,7 @@ struct CatchEditor: View {
     @State private var scoreType = ""
     @State private var message = ""
     @State private var busy = false
+    @State private var photoRevision = UUID()
     @State private var hasDate = false
     @State private var selectedDate = Date()
     let editingExisting: Bool
@@ -27,9 +28,17 @@ struct CatchEditor: View {
             Section("Photograph") {
                 if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take a photo") { camera = true } }
                 PhotosPicker(selection: $picked, matching: .images) { Label("Choose from Photos", systemImage: "photo") }
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["FISH_UI_IDENTIFY"] == "1" {
+                    Button("Load test photo") {
+                        let image = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 80)).image { context in UIColor.gray.setFill(); context.cgContext.fill(CGRect(x: 0, y: 0, width: 100, height: 80)) }
+                        if let data = image.jpegData(compressionQuality: 0.8) { applyPhoto(data) }
+                    }
+                }
+                #endif
                 if let photoData, let image = UIImage(data: photoData) {
-                    Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 320)
-                    Button("Draw or adjust fish box") { crop = true }
+                    FishSelectionImage(image: image, box: box)
+                    Button("Draw or adjust fish box") { photoRevision = UUID(); busy = false; suggestions = []; message = "Draw a box, then tap Identify fish."; crop = true }
                     Button(busy ? "Identifying…" : "Identify fish") { Task { await identify() } }.disabled(busy)
                 }
                 if !message.isEmpty { Text(message).font(.footnote) }
@@ -59,7 +68,7 @@ struct CatchEditor: View {
                 TextField("Longitude", text: $draft.lon).keyboardType(.numbersAndPunctuation)
             }
             Section {
-                Button("Save catch") { save() }.disabled(busy)
+                Button("Save catch") { save() }
                 Text("Catches are saved on this phone first. Named catches sync when the server is available; photographs without a species remain here for review.").font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -84,12 +93,14 @@ struct CatchEditor: View {
         do {
             let previous = draft.photoFile
             draft.photoFile = try DraftStorage.storePhoto(converted, id: draft.id)
+            photoRevision = UUID(); busy = false
             photoData = converted; box = nil; suggestions = []
             if draft.date.isEmpty, let value = metadata.date, let date = dateFormat.date(from: value) { hasDate = true; selectedDate = date }
             if draft.lat.isEmpty && draft.lon.isEmpty, let lat = metadata.latitude, let lon = metadata.longitude { draft.lat = String(lat); draft.lon = String(lon) }
             // Existing draft images remain until the new draft is durably saved.
             if previous == nil { message = "Photo added. Identify it now or save and review later." }
             else { message = "Photo replaced in this editor." }
+            Task { await identify() }
         } catch { message = "Could not save this photo on your phone: \(error.localizedDescription)" }
     }
     func save() {
@@ -98,7 +109,7 @@ struct CatchEditor: View {
         if !draft.lat.isEmpty && (Double(draft.lat).map { abs($0) <= 90 } != true || Double(draft.lon).map { abs($0) <= 180 } != true) { message = "Enter valid coordinates."; return }
         draft.date = hasDate ? dateFormat.string(from: selectedDate) : ""
         draft.ready = !draft.species.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        do { try store.saveDraft(draft); dismiss(); Task { await store.syncDrafts() } }
+        do { try store.saveDraft(draft); photoRevision = UUID(); busy = false; dismiss(); Task { await store.syncDrafts() } }
         catch { message = "Could not save the catch on your phone: \(error.localizedDescription)" }
     }
     func suggestionLabel(_ item: [String: Any]) -> String {
@@ -109,24 +120,60 @@ struct CatchEditor: View {
     }
     func identify() async {
         guard let photoData else { return }
-        busy = true; defer { busy = false }
-        do {
-            if box == nil {
-                message = "Finding the fish…"
+        let revision = photoRevision
+        busy = true
+        defer { if photoRevision == revision { busy = false } }
+        if box == nil {
+            message = "Finding the fish…"
+            do {
                 let result = try await store.sendMultipart(path: "/api/detect", fields: [:], photo: photoData, timeout: 15)
-                if let rect = result["box"] as? [String: Double], let x = rect["x"], let y = rect["y"], let w = rect["w"], let h = rect["h"], w > 0, h > 0 { box = CGRect(x: x, y: y, width: w, height: h) }
-                else { message = "Draw a box around the fish, then identify it."; return }
+                guard photoRevision == revision else { return }
+                if let raw = result["box"] as? [String: Double], let values = validatedFishBox(raw) {
+                    box = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+                } else { message = "Couldn't find the fish automatically. Draw a box around it, then tap Identify fish."; return }
+            } catch {
+                guard photoRevision == revision else { return }
+                message = "Couldn't find the fish automatically. Draw a box around it, then tap Identify fish."
+                return
             }
-            guard let image = UIImage(data: photoData), let selected = box, let cropped = image.croppedJPEG(normalised: selected) else { message = "Could not crop the fish. Adjust the box and try again."; return }
+        }
+        guard let image = UIImage(data: photoData), let selected = box, let cropped = image.croppedJPEG(normalised: selected) else { message = "Could not crop the fish. Adjust the box and try again."; return }
+        do {
             message = "Identifying your fish…"
             let result = try await store.sendMultipart(path: "/api/identify", fields: [:], photo: cropped, timeout: 110)
+            guard photoRevision == revision else { return }
             suggestions = result["suggestions"] as? [[String: Any]] ?? []
             scoreType = result["score_type"] as? String ?? "probability"
             message = suggestions.isEmpty ? "No suggestions found. Adjust the box and try again." : (scoreType == "similarity" ? "Choose a suggestion. Match scores are not probabilities." : "Choose a suggestion after checking it.")
         } catch {
+            guard photoRevision == revision else { return }
+            suggestions = []
             let detail = error.localizedDescription
-            message = detail.contains("429") ? "The identification service is busy. Save the photo and try again later." : "Identification unavailable: \(detail). You can save the photo and review it later."
+            message = detail.contains("429") || detail.localizedCaseInsensitiveContains("daily limit") ? "The identification service has reached its limit. The box remains visible; try again later or save the photo for review." : "Identification unavailable: \(detail). Your fish box stays visible and you can save the photo for review."
         }
+    }
+}
+
+struct FishSelectionImage: View {
+    let image: UIImage
+    let box: CGRect?
+    var body: some View {
+        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 320)
+            .accessibilityLabel(box == nil ? "Catch photo" : "Catch photo with fish box")
+            .accessibilityIdentifier(box == nil ? "catch-photo" : "fish-selection-box")
+            .overlay {
+                GeometryReader { geometry in
+                    if let box, geometry.size.width > 0, geometry.size.height > 0, image.size.width > 0, image.size.height > 0 {
+                        let scale = min(geometry.size.width / image.size.width, geometry.size.height / image.size.height)
+                        let width = image.size.width * scale, height = image.size.height * scale
+                        let left = (geometry.size.width - width) / 2, top = (geometry.size.height - height) / 2
+                        Rectangle().stroke(.yellow, lineWidth: 3)
+                            .frame(width: box.width * width, height: box.height * height)
+                            .offset(x: left + box.minX * width, y: top + box.minY * height)
+                            
+                    }
+                }.allowsHitTesting(false)
+            }
     }
 }
 

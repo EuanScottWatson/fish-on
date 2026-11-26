@@ -46,4 +46,11 @@ final class FishCoreTests: XCTestCase {
         XCTAssertEqual(secondSearch.map(\.id), ["far"])
         XCTAssertEqual(found.map(\.id), ["one"])
     }
+    func testDetectorBoxValidation() {
+        XCTAssertEqual(validatedFishBox(["x": 0.25, "y": 0.1, "w": 0.5, "h": 0.4]), [0.25, 0.1, 0.5, 0.4])
+        XCTAssertEqual(validatedFishBox(["x": -0.25, "y": 0, "w": 0.5, "h": 2]), [0, 0, 0.25, 1])
+        XCTAssertNil(validatedFishBox(["x": 0, "y": 0, "w": 0, "h": 1]))
+        XCTAssertNil(validatedFishBox(["x": .nan, "y": 0, "w": 1, "h": 1]))
+        XCTAssertNil(validatedFishBox(["x": 2, "y": 0, "w": 1, "h": 1]))
+    }
 }

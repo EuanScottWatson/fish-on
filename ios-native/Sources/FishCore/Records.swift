@@ -90,3 +90,13 @@ public func recordsInArea(_ records: [Record], latitude: Double, longitude: Doub
         return abs(lat - latitude) < latitudeSpan / 2 && abs(lon - longitude) < longitudeSpan / 2
     }.prefix(limit))
 }
+
+/// Validate and clamp detector coordinates before drawing or cropping an image.
+public func validatedFishBox(_ object: [String: Double]) -> [Double]? {
+    guard let x = object["x"], let y = object["y"], let width = object["w"], let height = object["h"],
+          x.isFinite, y.isFinite, width.isFinite, height.isFinite, width > 0, height > 0 else { return nil }
+    let left = max(0, min(1, x)), top = max(0, min(1, y))
+    let right = max(0, min(1, x + width)), bottom = max(0, min(1, y + height))
+    guard right > left, bottom > top else { return nil }
+    return [left, top, right - left, bottom - top]
+}

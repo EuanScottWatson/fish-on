@@ -57,4 +57,33 @@ final class FishOnUITests: XCTestCase {
         search.tap()
         XCTAssertTrue(app.staticTexts["Showing 1 surveys in the searched area. Historic records do not imply fishing access. © Environment Agency."].waitForExistence(timeout: 20))
     }
+    func testDetectorBoxRemainsVisibleWhenIdentificationFails() {
+        let app = XCUIApplication()
+        app.launchEnvironment["FISH_UI_TEST"] = "1"
+        app.launchEnvironment["FISH_UI_IDENTIFY"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["Log a catch"].waitForExistence(timeout: 30))
+        app.buttons["Log a catch"].tap()
+        XCTAssertTrue(app.buttons["Load test photo"].waitForExistence(timeout: 10))
+        app.buttons["Load test photo"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "reached its limit")).firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.descendants(matching: .any)["fish-selection-box"].exists)
+        XCTAssertTrue(app.buttons["Draw or adjust fish box"].exists)
+        XCTAssertTrue(app.buttons["Save catch"].exists)
+    }
+    func testManualBoxRemainsAvailableWhenDetectionFails() {
+        let app = XCUIApplication()
+        app.launchEnvironment["FISH_UI_TEST"] = "offline"
+        app.launchEnvironment["FISH_UI_IDENTIFY"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["Log a catch"].waitForExistence(timeout: 30))
+        app.buttons["Log a catch"].tap()
+        XCTAssertTrue(app.buttons["Load test photo"].waitForExistence(timeout: 10))
+        app.buttons["Load test photo"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Draw a box around it")).firstMatch.waitForExistence(timeout: 20))
+        let draw = app.buttons["Draw or adjust fish box"]
+        XCTAssertTrue(draw.exists)
+        draw.tap()
+        XCTAssertTrue(app.navigationBars["Select the fish"].waitForExistence(timeout: 10))
+    }
 }

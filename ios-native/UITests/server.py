@@ -35,10 +35,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """
         Accept only a test catch and save it to the isolated fixture.
         """
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        if self.path == "/api/detect":
+            self.reply({"box": {"x": 0.1, "y": 0.2, "w": 0.7, "h": 0.5}})
+            return
+        if self.path == "/api/identify":
+            self.reply({"error": "The identification service has reached its daily limit."}, 502)
+            return
         if self.path != "/api/catches":
             self.send_error(404)
             return
-        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         if b"Test perch" not in body or b'name="species"' not in body:
             self.send_error(400)
             return
@@ -46,12 +52,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path.write_text(json.dumps([{"id": "0123456789abcdef0123456789abcdef", "species": "Test perch", "date": "2026-05-17"}]))
         self.reply({"id": "0123456789abcdef0123456789abcdef"})
 
-    def reply(self, value: object):
+    def reply(self, value: object, status: int = 200):
         """
         Return a JSON fixture.
         """
         data = json.dumps(value).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
